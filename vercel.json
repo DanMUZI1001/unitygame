@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "public": true,
+  "builds": [
+    {
+      "src": "WebGLBuild/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/WebGLBuild/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/Build/(.*)\\.br",
+      "headers": [
+        {
+          "key": "Content-Encoding",
+          "value": "br"
+        }
+      ]
+    }
+  ]
+}
