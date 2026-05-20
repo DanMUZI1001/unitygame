@@ -1,0 +1,1964 @@
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+public enum DuelAbility
+{
+    DashMaster,
+    FireMage,
+    IceMage,
+    Healer,
+    Thunder,
+    Wind,
+    Stone,
+    Shadow,
+    Poison,
+    Magnet
+}
+
+public struct DuelInputState
+{
+    public float MoveX;
+    public float MoveZ;
+    public bool Jump;
+    public bool Attack;
+    public bool SkillOne;
+    public bool SkillTwo;
+}
+
+public class OneVsOneGame : MonoBehaviour
+{
+    private const float MatchTime = 90f;
+    private const float ArenaHalfWidth = 8.75f;
+    private const float ArenaHalfLength = 5.75f;
+
+    private readonly string[] mapNames =
+    {
+        "Classic",
+        "Cross",
+        "Pillars",
+        "Corridor",
+        "Corners",
+        "Maze",
+        "Holes",
+        "Void Cross",
+        "Split Void",
+        "Islands",
+        "Jump Steps",
+        "Sky Pads",
+        "Big Arena",
+        "Tower Heights"
+    };
+
+    private DuelPlayer player1;
+    private DuelPlayer player2;
+    private SplitScreenCameraFollow player1Camera;
+    private SplitScreenCameraFollow player2Camera;
+    private Transform mapRoot;
+    private float timeLeft;
+    private string winnerMessage = "";
+    private int currentMapIndex;
+    private Vector2 currentMapSize = new Vector2(18f, 12f);
+    private bool onlineMode;
+    private bool onlineHost;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void CreateOnPlay()
+    {
+        if (FindAnyObjectByType<OneVsOneGame>() != null)
+        {
+            return;
+        }
+
+        new GameObject("1v1 Game").AddComponent<OneVsOneGame>();
+    }
+
+    private void Start()
+    {
+        QualitySettings.vSyncCount = 1;
+        Application.targetFrameRate = -1;
+        Time.fixedDeltaTime = 1f / 60f;
+
+        CreateCameraAndLight();
+        StartRound();
+    }
+
+    private void Update()
+    {
+        if (player1 == null || player2 == null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(winnerMessage))
+        {
+            if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+            {
+                StartRound();
+            }
+
+            return;
+        }
+
+        timeLeft = Mathf.Max(0f, timeLeft - Time.deltaTime);
+        CheckFallDeaths();
+
+        if (player1.Health <= 0)
+        {
+            winnerMessage = "Player 2 Wins!";
+        }
+        else if (player2.Health <= 0)
+        {
+            winnerMessage = "Player 1 Wins!";
+        }
+        else if (timeLeft <= 0f)
+        {
+            EndByTime();
+        }
+    }
+
+    private void OnGUI()
+    {
+        if (player1 == null || player2 == null)
+        {
+            return;
+        }
+
+        GUIStyle labelStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 22,
+            normal = { textColor = Color.white }
+        };
+
+        GUIStyle centerStyle = new GUIStyle(labelStyle)
+        {
+            alignment = TextAnchor.MiddleCenter
+        };
+
+        GUI.Label(new Rect(20f, 16f, 420f, 100f), player1.GetHudText("P1", "C", "G", "H"), labelStyle);
+        GUI.Label(new Rect(Screen.width - 440f, 16f, 420f, 100f), player2.GetHudText("P2", "/", ",", "M"), labelStyle);
+        GUI.Label(new Rect(0f, 16f, Screen.width, 40f), FormatTime(timeLeft), centerStyle);
+        GUI.Label(new Rect(0f, 48f, Screen.width, 40f), "Map: " + mapNames[currentMapIndex], centerStyle);
+
+        if (string.IsNullOrEmpty(winnerMessage))
+        {
+            return;
+        }
+
+        GUIStyle winStyle = new GUIStyle(centerStyle)
+        {
+            fontSize = 42,
+            normal = { textColor = Color.yellow }
+        };
+
+        GUI.Label(new Rect(0f, Screen.height * 0.35f, Screen.width, 80f), winnerMessage, winStyle);
+        GUI.Label(new Rect(0f, Screen.height * 0.48f, Screen.width, 50f), "Press R to Restart", centerStyle);
+    }
+
+    private void StartRound()
+    {
+        StartRound(Random.Range(0, mapNames.Length), GetRandomAbility(), GetRandomAbility());
+    }
+
+    public void StartRound(int mapIndex, DuelAbility p1Ability, DuelAbility p2Ability)
+    {
+        winnerMessage = "";
+        timeLeft = MatchTime;
+
+        ClearOldRound();
+        currentMapIndex = Mathf.Clamp(mapIndex, 0, mapNames.Length - 1);
+        BuildMap(currentMapIndex);
+
+        player1 = CreatePlayer(
+            "Player 1",
+            GetPlayerSpawnPosition(1),
+            Color.blue,
+            Key.W,
+            Key.S,
+            Key.A,
+            Key.D,
+            Key.C,
+            Key.F,
+            Key.G,
+            Key.H,
+            p1Ability);
+
+        player2 = CreatePlayer(
+            "Player 2",
+            GetPlayerSpawnPosition(2),
+            Color.red,
+            Key.UpArrow,
+            Key.DownArrow,
+            Key.LeftArrow,
+            Key.RightArrow,
+            Key.Slash,
+            Key.Period,
+            Key.Comma,
+            Key.M,
+            p2Ability);
+
+        player1.SetOpponent(player2);
+        player2.SetOpponent(player1);
+        ConfigurePlayerInputForCurrentMode();
+        AssignSplitScreenTargets();
+    }
+
+    public void SetOnlineRole(bool isOnline, bool isHost)
+    {
+        onlineMode = isOnline;
+        onlineHost = isHost;
+        ConfigurePlayerInputForCurrentMode();
+    }
+
+    public int CurrentMapIndex => currentMapIndex;
+    public float TimeLeft => timeLeft;
+    public string WinnerMessage => winnerMessage;
+    public DuelPlayer Player1 => player1;
+    public DuelPlayer Player2 => player2;
+
+    public void SetTimeLeft(float value)
+    {
+        timeLeft = Mathf.Clamp(value, 0f, MatchTime);
+    }
+
+    public void ApplyRemoteInput(DuelInputState input)
+    {
+        if (player2 != null)
+        {
+            player2.SetExternalInput(input);
+        }
+    }
+
+    public DuelInputState ReadPlayer2LocalInput()
+    {
+        return player2 != null ? player2.ReadLocalInput() : new DuelInputState();
+    }
+
+    public void ApplyNetworkSnapshot(Vector3 p1Position, Quaternion p1Rotation, int p1Health, Vector3 p2Position, Quaternion p2Rotation, int p2Health, float syncedTime, string syncedWinner)
+    {
+        if (player1 == null || player2 == null)
+        {
+            return;
+        }
+
+        player1.ApplyNetworkState(p1Position, p1Rotation, p1Health);
+        player2.ApplyNetworkState(p2Position, p2Rotation, p2Health);
+        timeLeft = syncedTime;
+        winnerMessage = syncedWinner ?? "";
+    }
+
+    private void ConfigurePlayerInputForCurrentMode()
+    {
+        if (player1 == null || player2 == null)
+        {
+            return;
+        }
+
+        if (!onlineMode)
+        {
+            player1.SetLocalInputEnabled(true);
+            player1.SetExternalInputEnabled(false);
+            player2.SetLocalInputEnabled(true);
+            player2.SetExternalInputEnabled(false);
+            return;
+        }
+
+        player1.SetLocalInputEnabled(onlineHost);
+        player1.SetExternalInputEnabled(false);
+        player2.SetLocalInputEnabled(!onlineHost);
+        player2.SetExternalInputEnabled(onlineHost);
+    }
+
+    private void ClearOldRound()
+    {
+        foreach (DuelProjectile projectile in FindObjectsByType<DuelProjectile>())
+        {
+            Destroy(projectile.gameObject);
+        }
+
+        foreach (DuelPlayer player in FindObjectsByType<DuelPlayer>())
+        {
+            Destroy(player.gameObject);
+        }
+
+        if (mapRoot != null)
+        {
+            Destroy(mapRoot.gameObject);
+        }
+    }
+
+    private void EndByTime()
+    {
+        if (player1.Health > player2.Health)
+        {
+            winnerMessage = "Time Up! Player 1 Wins!";
+        }
+        else if (player2.Health > player1.Health)
+        {
+            winnerMessage = "Time Up! Player 2 Wins!";
+        }
+        else
+        {
+            winnerMessage = "Time Up! Draw!";
+        }
+    }
+
+    private void CheckFallDeaths()
+    {
+        CheckFallDeath(player1);
+        CheckFallDeath(player2);
+    }
+
+    private void CheckFallDeath(DuelPlayer player)
+    {
+        if (player == null || player.Health <= 0)
+        {
+            return;
+        }
+
+        Vector3 position = player.transform.position;
+        bool fellDown = position.y < -2f;
+
+        if (fellDown)
+        {
+            player.Kill();
+        }
+    }
+
+    private DuelAbility GetRandomAbility()
+    {
+        int count = System.Enum.GetValues(typeof(DuelAbility)).Length;
+        return (DuelAbility)Random.Range(0, count);
+    }
+
+    private Vector3 GetPlayerSpawnPosition(int playerNumber)
+    {
+        float side = playerNumber == 1 ? -1f : 1f;
+
+        switch (currentMapIndex)
+        {
+            case 12:
+                return new Vector3(side * 14f, 1f, 0f);
+            case 13:
+                return new Vector3(side * 6f, 1.8f, -5.5f);
+            default:
+                return new Vector3(side * 5.8f, 1f, 0f);
+        }
+    }
+
+    private Vector2 GetMapSize(int mapIndex)
+    {
+        switch (mapIndex)
+        {
+            case 12:
+                return new Vector2(40f, 28f);
+            case 13:
+                return new Vector2(24f, 24f);
+            default:
+                return new Vector2(18f, 12f);
+        }
+    }
+
+    private DuelPlayer CreatePlayer(string playerName, Vector3 position, Color color, Key up, Key down, Key left, Key right, Key jump, Key attack, Key skillOne, Key skillTwo, DuelAbility ability)
+    {
+        GameObject playerObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        playerObject.name = playerName;
+        playerObject.transform.position = position;
+        playerObject.GetComponent<Renderer>().material = CreateMaterial(color);
+
+        Destroy(playerObject.GetComponent<Collider>());
+
+        CharacterController controller = playerObject.AddComponent<CharacterController>();
+        controller.height = 2f;
+        controller.radius = 0.45f;
+        controller.skinWidth = 0.06f;
+
+        DuelPlayer player = playerObject.AddComponent<DuelPlayer>();
+        player.Setup(playerName, up, down, left, right, jump, attack, skillOne, skillTwo, ability);
+
+        GameObject attackVisual = new GameObject("Attack Visual");
+        attackVisual.transform.SetParent(playerObject.transform);
+        attackVisual.transform.localPosition = Vector3.zero;
+        attackVisual.transform.localRotation = Quaternion.identity;
+        attackVisual.SetActive(false);
+        player.SetAttackVisual(attackVisual);
+
+        CreateNameTag(playerObject.transform, playerName);
+        return player;
+    }
+
+    private void BuildMap(int mapIndex)
+    {
+        mapRoot = new GameObject("Map - " + mapNames[mapIndex]).transform;
+        currentMapSize = GetMapSize(mapIndex);
+
+        BuildFloor(mapIndex);
+
+        if (HasOuterWalls(mapIndex))
+        {
+            CreateOuterWall("North Wall", new Vector3(0f, 0.85f, currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, 1.45f, 0.45f));
+            CreateOuterWall("South Wall", new Vector3(0f, 0.85f, -currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, 1.45f, 0.45f));
+            CreateOuterWall("West Wall", new Vector3(-currentMapSize.x * 0.5f, 0.85f, 0f), new Vector3(0.45f, 1.45f, currentMapSize.y));
+            CreateOuterWall("East Wall", new Vector3(currentMapSize.x * 0.5f, 0.85f, 0f), new Vector3(0.45f, 1.45f, currentMapSize.y));
+        }
+
+        switch (mapIndex)
+        {
+            case 0:
+                AddObstacle("Center Block", 0f, 0f, 2f, 2f);
+                AddObstacle("Top Block", 0f, 3.3f, 4f, 0.7f);
+                AddObstacle("Bottom Block", 0f, -3.3f, 4f, 0.7f);
+                break;
+            case 1:
+                AddObstacle("Cross H", 0f, 0f, 5.5f, 0.65f);
+                AddObstacle("Cross V", 0f, 0f, 0.65f, 5f);
+                break;
+            case 2:
+                AddObstacle("Pillar 1", -3.5f, 2.7f, 1.2f, 1.2f);
+                AddObstacle("Pillar 2", 3.5f, 2.7f, 1.2f, 1.2f);
+                AddObstacle("Pillar 3", -3.5f, -2.7f, 1.2f, 1.2f);
+                AddObstacle("Pillar 4", 3.5f, -2.7f, 1.2f, 1.2f);
+                break;
+            case 3:
+                AddObstacle("Left Lane", -2.5f, 0f, 0.8f, 8f);
+                AddObstacle("Right Lane", 2.5f, 0f, 0.8f, 8f);
+                AddObstacle("Mid Cover", 0f, 0f, 1.4f, 1.4f);
+                break;
+            case 4:
+                AddObstacle("Top Left", -5f, 3f, 3f, 1f);
+                AddObstacle("Top Right", 5f, 3f, 3f, 1f);
+                AddObstacle("Bottom Left", -5f, -3f, 3f, 1f);
+                AddObstacle("Bottom Right", 5f, -3f, 3f, 1f);
+                break;
+            case 5:
+                AddObstacle("Maze 1", -4f, 2.3f, 4f, 0.7f);
+                AddObstacle("Maze 2", 4f, -2.3f, 4f, 0.7f);
+                AddObstacle("Maze 3", -1.8f, -1.2f, 0.7f, 3.2f);
+                AddObstacle("Maze 4", 1.8f, 1.2f, 0.7f, 3.2f);
+                break;
+            case 6:
+                AddObstacle("Hole Map Cover 1", -5.2f, 3.5f, 2f, 0.7f);
+                AddObstacle("Hole Map Cover 2", 5.2f, -3.5f, 2f, 0.7f);
+                break;
+            case 7:
+                AddObstacle("Void Cross Cover", 0f, 0f, 1.2f, 1.2f);
+                break;
+            case 8:
+                AddObstacle("Split Left Cover", -4.7f, 0f, 1.1f, 2.4f);
+                AddObstacle("Split Right Cover", 4.7f, 0f, 1.1f, 2.4f);
+                break;
+            case 9:
+                AddObstacle("Island Center Cover", 0f, 0f, 1.2f, 1.2f);
+                break;
+            case 10:
+                AddObstacle("Step Cover Left", -3.3f, 0f, 0.9f, 0.9f);
+                AddObstacle("Step Cover Right", 3.3f, 0f, 0.9f, 0.9f);
+                break;
+            case 11:
+                AddObstacle("Sky Pad Cover", 0f, 0f, 0.9f, 0.9f);
+                break;
+            case 12:
+                AddObstacle("Big Center Block", 0f, 0f, 4f, 4f);
+                AddObstacle("Big North Cover", -8f, 8f, 6f, 1.2f);
+                AddObstacle("Big South Cover", 8f, -8f, 6f, 1.2f);
+                AddObstacle("Big West Pillar", -12f, -6f, 2.2f, 2.2f);
+                AddObstacle("Big East Pillar", 12f, 6f, 2.2f, 2.2f);
+                break;
+            default:
+                AddObstacle("Tower Center Cover", 0f, 0f, 1.2f, 1.2f);
+                break;
+        }
+    }
+
+    private void BuildFloor(int mapIndex)
+    {
+        switch (mapIndex)
+        {
+            case 6:
+                BuildHoleFloor();
+                break;
+            case 7:
+                BuildVoidCrossFloor();
+                break;
+            case 8:
+                BuildSplitVoidFloor();
+                break;
+            case 9:
+                BuildIslandFloor();
+                break;
+            case 10:
+                BuildJumpStepsFloor();
+                break;
+            case 11:
+                BuildSkyPadsFloor();
+                break;
+            case 12:
+                BuildBigArenaFloor();
+                break;
+            case 13:
+                BuildTowerHeightsFloor();
+                break;
+            default:
+                CreateBlock("Arena Floor", Vector3.zero, new Vector3(18f, 0.25f, 12f), new Color(0.25f, 0.36f, 0.31f), true);
+                break;
+        }
+    }
+
+    private bool HasOuterWalls(int mapIndex)
+    {
+        return mapIndex <= 5 || mapIndex == 12;
+    }
+
+    private void BuildHoleFloor()
+    {
+        CreateBlock("Floor Left", new Vector3(-6.75f, 0f, 0f), new Vector3(4.5f, 0.25f, 12f), new Color(0.23f, 0.34f, 0.29f), true);
+        CreateBlock("Floor Right", new Vector3(6.75f, 0f, 0f), new Vector3(4.5f, 0.25f, 12f), new Color(0.23f, 0.34f, 0.29f), true);
+        CreateBlock("Floor Top", new Vector3(0f, 0f, 4.3f), new Vector3(9f, 0.25f, 3.4f), new Color(0.23f, 0.34f, 0.29f), true);
+        CreateBlock("Floor Bottom", new Vector3(0f, 0f, -4.3f), new Vector3(9f, 0.25f, 3.4f), new Color(0.23f, 0.34f, 0.29f), true);
+        CreateBlock("Floor Center Strip H", new Vector3(0f, 0f, 0f), new Vector3(9f, 0.25f, 1.2f), new Color(0.23f, 0.34f, 0.29f), true);
+        CreateBlock("Floor Center Strip V", new Vector3(0f, 0f, 0f), new Vector3(1.2f, 0.25f, 6.8f), new Color(0.23f, 0.34f, 0.29f), true);
+    }
+
+    private void BuildVoidCrossFloor()
+    {
+        Color floorColor = new Color(0.24f, 0.35f, 0.32f);
+        CreateBlock("Cross Floor H", Vector3.zero, new Vector3(18f, 0.25f, 2.2f), floorColor, true);
+        CreateBlock("Cross Floor V", Vector3.zero, new Vector3(2.4f, 0.25f, 12f), floorColor, true);
+        CreateBlock("Spawn Pad Left", new Vector3(-5.8f, 0f, 0f), new Vector3(3.2f, 0.25f, 3.2f), floorColor, true);
+        CreateBlock("Spawn Pad Right", new Vector3(5.8f, 0f, 0f), new Vector3(3.2f, 0.25f, 3.2f), floorColor, true);
+    }
+
+    private void BuildSplitVoidFloor()
+    {
+        Color floorColor = new Color(0.24f, 0.34f, 0.3f);
+        CreateBlock("Left Platform", new Vector3(-5.1f, 0f, 0f), new Vector3(6.2f, 0.25f, 10.5f), floorColor, true);
+        CreateBlock("Right Platform", new Vector3(5.1f, 0f, 0f), new Vector3(6.2f, 0.25f, 10.5f), floorColor, true);
+        CreateBlock("Top Bridge", new Vector3(0f, 0f, 3.9f), new Vector3(4f, 0.25f, 1.1f), floorColor, true);
+        CreateBlock("Bottom Bridge", new Vector3(0f, 0f, -3.9f), new Vector3(4f, 0.25f, 1.1f), floorColor, true);
+    }
+
+    private void BuildIslandFloor()
+    {
+        Color floorColor = new Color(0.25f, 0.36f, 0.31f);
+        CreateBlock("Left Island", new Vector3(-5.8f, 0f, 0f), new Vector3(4.4f, 0.25f, 5.2f), floorColor, true);
+        CreateBlock("Right Island", new Vector3(5.8f, 0f, 0f), new Vector3(4.4f, 0.25f, 5.2f), floorColor, true);
+        CreateBlock("Center Island", Vector3.zero, new Vector3(3f, 0.25f, 3f), floorColor, true);
+        CreateBlock("North Bridge", new Vector3(0f, 0f, 2.5f), new Vector3(9f, 0.25f, 0.9f), floorColor, true);
+        CreateBlock("South Bridge", new Vector3(0f, 0f, -2.5f), new Vector3(9f, 0.25f, 0.9f), floorColor, true);
+    }
+
+    private void BuildJumpStepsFloor()
+    {
+        Color floorColor = new Color(0.24f, 0.35f, 0.33f);
+        CreateBlock("Left Spawn Platform", new Vector3(-6.2f, 0f, 0f), new Vector3(3.8f, 0.25f, 4.8f), floorColor, true);
+        CreateBlock("Right Spawn Platform", new Vector3(6.2f, 0f, 0f), new Vector3(3.8f, 0.25f, 4.8f), floorColor, true);
+        CreatePlatform("Step 1", -3.3f, 0f, 0.45f, 2.2f, 2.6f);
+        CreatePlatform("Step 2", 0f, 0f, 0.9f, 2.4f, 2.4f);
+        CreatePlatform("Step 3", 3.3f, 0f, 0.45f, 2.2f, 2.6f);
+        CreateBlock("Top Thin Bridge", new Vector3(0f, 0.1f, 3.7f), new Vector3(11f, 0.25f, 0.75f), floorColor, true);
+        CreateBlock("Bottom Thin Bridge", new Vector3(0f, 0.1f, -3.7f), new Vector3(11f, 0.25f, 0.75f), floorColor, true);
+    }
+
+    private void BuildSkyPadsFloor()
+    {
+        Color floorColor = new Color(0.25f, 0.36f, 0.31f);
+        CreateBlock("Left Sky Pad", new Vector3(-5.8f, 0f, 0f), new Vector3(4f, 0.25f, 4f), floorColor, true);
+        CreateBlock("Right Sky Pad", new Vector3(5.8f, 0f, 0f), new Vector3(4f, 0.25f, 4f), floorColor, true);
+        CreatePlatform("North Mid Pad", -2.2f, 2.8f, 0.55f, 2.2f, 2f);
+        CreatePlatform("Center High Pad", 0f, 0f, 1.15f, 2.3f, 2.3f);
+        CreatePlatform("South Mid Pad", 2.2f, -2.8f, 0.55f, 2.2f, 2f);
+        CreateBlock("Small Left Bridge", new Vector3(-3.9f, 0.15f, 1.9f), new Vector3(2.2f, 0.25f, 0.65f), floorColor, true);
+        CreateBlock("Small Right Bridge", new Vector3(3.9f, 0.15f, -1.9f), new Vector3(2.2f, 0.25f, 0.65f), floorColor, true);
+    }
+
+    private void BuildBigArenaFloor()
+    {
+        Color floorColor = new Color(0.23f, 0.34f, 0.3f);
+        CreateBlock("Huge Arena Floor", Vector3.zero, new Vector3(40f, 0.25f, 28f), floorColor, true);
+        CreateBlock("Huge Arena North Ridge", new Vector3(0f, 0.25f, 10f), new Vector3(24f, 0.45f, 1.1f), new Color(0.3f, 0.38f, 0.34f), true);
+        CreateBlock("Huge Arena South Ridge", new Vector3(0f, 0.25f, -10f), new Vector3(24f, 0.45f, 1.1f), new Color(0.3f, 0.38f, 0.34f), true);
+        CreateBlock("Huge Arena Mid Lane", Vector3.zero, new Vector3(2f, 0.4f, 22f), new Color(0.28f, 0.36f, 0.32f), true);
+    }
+
+    private void BuildTowerHeightsFloor()
+    {
+        Color floorColor = new Color(0.24f, 0.35f, 0.33f);
+        CreateBlock("Lower Left Platform", new Vector3(-6f, 0f, -5.5f), new Vector3(4.5f, 0.25f, 4f), floorColor, true);
+        CreateBlock("Lower Right Platform", new Vector3(6f, 0f, -5.5f), new Vector3(4.5f, 0.25f, 4f), floorColor, true);
+        CreatePlatform("Mid Left Tower", -4f, -1.6f, 1.8f, 3.4f, 3.4f);
+        CreatePlatform("Mid Right Tower", 4f, -1.6f, 1.8f, 3.4f, 3.4f);
+        CreatePlatform("High Center Tower", 0f, 2f, 3.4f, 4f, 4f);
+        CreatePlatform("Top North Tower", 0f, 6.3f, 5.2f, 4.5f, 3.2f);
+        CreateBlock("Left High Bridge", new Vector3(-2.2f, 2.65f, 0.1f), new Vector3(4.4f, 0.3f, 0.75f), floorColor, true);
+        CreateBlock("Right High Bridge", new Vector3(2.2f, 2.65f, 0.1f), new Vector3(4.4f, 0.3f, 0.75f), floorColor, true);
+        CreateBlock("North High Bridge", new Vector3(0f, 4.25f, 4.2f), new Vector3(0.85f, 0.3f, 4.4f), floorColor, true);
+    }
+
+    private void CreatePlatform(string platformName, float x, float z, float height, float width, float length)
+    {
+        CreateBlock(platformName, new Vector3(x, height * 0.5f, z), new Vector3(width, height, length), new Color(0.32f, 0.4f, 0.36f), true);
+    }
+
+    private void CreateOuterWall(string wallName, Vector3 position, Vector3 scale)
+    {
+        CreateBlock(wallName, position, scale, new Color(0.55f, 0.5f, 0.42f), true);
+    }
+
+    private void AddObstacle(string blockName, float x, float z, float width, float length)
+    {
+        CreateBlock(blockName, new Vector3(x, 0.8f, z), new Vector3(width, 1.6f, length), new Color(0.45f, 0.42f, 0.32f), true);
+    }
+
+    private GameObject CreateBlock(string blockName, Vector3 position, Vector3 scale, Color color, bool hasCollider)
+    {
+        GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        block.name = blockName;
+        block.transform.SetParent(mapRoot);
+        block.transform.position = position;
+        block.transform.localScale = scale;
+        block.GetComponent<Renderer>().material = CreateMaterial(color);
+
+        if (!hasCollider)
+        {
+            Destroy(block.GetComponent<Collider>());
+        }
+
+        return block;
+    }
+
+    private GameObject CreateVisualCube(string objectName, Transform parent, Vector3 localPosition, Vector3 localScale, Color color)
+    {
+        GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        visual.name = objectName;
+        visual.transform.SetParent(parent);
+        visual.transform.localPosition = localPosition;
+        visual.transform.localScale = localScale;
+        visual.GetComponent<Renderer>().material = CreateMaterial(color);
+        Destroy(visual.GetComponent<Collider>());
+        return visual;
+    }
+
+    private void CreateCameraAndLight()
+    {
+        foreach (Camera camera in FindObjectsByType<Camera>())
+        {
+            Destroy(camera.gameObject);
+        }
+
+        player1Camera = CreateSplitCamera("Player 1 Camera", new Rect(0f, 0f, 0.5f, 1f), true);
+        player2Camera = CreateSplitCamera("Player 2 Camera", new Rect(0.5f, 0f, 0.5f, 1f), false);
+
+        if (FindAnyObjectByType<Light>() == null)
+        {
+            GameObject lightObject = new GameObject("Directional Light");
+            Light light = lightObject.AddComponent<Light>();
+            light.type = LightType.Directional;
+            light.intensity = 1.2f;
+            lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+        }
+    }
+
+    private SplitScreenCameraFollow CreateSplitCamera(string cameraName, Rect viewport, bool mainCamera)
+    {
+        GameObject cameraObject = new GameObject(cameraName);
+        if (mainCamera)
+        {
+            cameraObject.tag = "MainCamera";
+            cameraObject.AddComponent<AudioListener>();
+        }
+
+        Camera camera = cameraObject.AddComponent<Camera>();
+        camera.rect = viewport;
+        camera.fieldOfView = 58f;
+        camera.clearFlags = CameraClearFlags.Skybox;
+
+        SplitScreenCameraFollow follow = cameraObject.AddComponent<SplitScreenCameraFollow>();
+        follow.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
+        return follow;
+    }
+
+    private void AssignSplitScreenTargets()
+    {
+        if (player1Camera != null)
+        {
+            player1Camera.SetTarget(player1.transform);
+            player1Camera.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
+        }
+
+        if (player2Camera != null)
+        {
+            player2Camera.SetTarget(player2.transform);
+            player2Camera.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
+        }
+    }
+
+    private void CreateNameTag(Transform parent, string text)
+    {
+        GameObject tagObject = new GameObject(text + " Name");
+        tagObject.transform.SetParent(parent);
+        tagObject.transform.localPosition = new Vector3(0f, 1.4f, 0f);
+
+        TextMesh textMesh = tagObject.AddComponent<TextMesh>();
+        textMesh.text = text;
+        textMesh.characterSize = 0.25f;
+        textMesh.anchor = TextAnchor.MiddleCenter;
+        textMesh.alignment = TextAlignment.Center;
+        textMesh.color = Color.white;
+    }
+
+    private Material CreateMaterial(Color color)
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Standard");
+        }
+
+        Material material = new Material(shader);
+        material.color = color;
+        return material;
+    }
+
+    private string FormatTime(float seconds)
+    {
+        int totalSeconds = Mathf.CeilToInt(seconds);
+        return $"{totalSeconds / 60:00}:{totalSeconds % 60:00}";
+    }
+}
+
+public class DuelPlayer : MonoBehaviour
+{
+    [SerializeField] private float moveSpeed = 5.4f;
+    [SerializeField] private float acceleration = 28f;
+    [SerializeField] private float inputSmoothTime = 0.08f;
+    [SerializeField] private float rotationDegreesPerSecond = 720f;
+    [SerializeField] private float jumpForce = 7.6f;
+    [SerializeField] private int maxHealth = 100;
+    [SerializeField] private int attackDamage = 16;
+    [SerializeField] private float attackRange = 1.65f;
+    [SerializeField] private float attackCooldown = 0.8f;
+
+    private CharacterController controller;
+    private DuelPlayer opponent;
+    private GameObject attackVisual;
+    private DuelAbility ability;
+    private Key upKey;
+    private Key downKey;
+    private Key leftKey;
+    private Key rightKey;
+    private Key jumpKey;
+    private Key attackKey;
+    private Key skillOneKey;
+    private Key skillTwoKey;
+    private Vector3 smoothedInput;
+    private Vector3 inputSmoothVelocity;
+    private Vector3 moveVelocity;
+    private Vector3 pushVelocity;
+    private float verticalVelocity;
+    private float nextAttackTime;
+    private float nextSkillOneTime;
+    private float nextSkillTwoTime;
+    private float hideAttackVisualTime;
+    private float speedBoostEndTime;
+    private float slowEndTime;
+    private float stunEndTime;
+    private float shieldEndTime;
+    private float poisonTickTime;
+    private int poisonTicksLeft;
+    private bool acceptsLocalInput = true;
+    private bool acceptsExternalInput;
+    private DuelInputState externalInput;
+    private DuelInputState activeInput;
+
+    public int Health { get; private set; }
+    public DuelAbility Ability => ability;
+
+    public void Setup(string playerName, Key up, Key down, Key left, Key right, Key jump, Key attack, Key skillOne, Key skillTwo, DuelAbility selectedAbility)
+    {
+        name = playerName;
+        upKey = up;
+        downKey = down;
+        leftKey = left;
+        rightKey = right;
+        jumpKey = jump;
+        attackKey = attack;
+        skillOneKey = skillOne;
+        skillTwoKey = skillTwo;
+        ability = selectedAbility;
+        Health = maxHealth;
+    }
+
+    public void SetOpponent(DuelPlayer target)
+    {
+        opponent = target;
+    }
+
+    public void SetAttackVisual(GameObject visual)
+    {
+        attackVisual = visual;
+    }
+
+    public void SetLocalInputEnabled(bool enabled)
+    {
+        acceptsLocalInput = enabled;
+    }
+
+    public void SetExternalInputEnabled(bool enabled)
+    {
+        acceptsExternalInput = enabled;
+    }
+
+    public void SetExternalInput(DuelInputState input)
+    {
+        externalInput = input;
+    }
+
+    public DuelInputState ReadLocalInput()
+    {
+        DuelInputState input = new DuelInputState();
+
+        if (Keyboard.current == null)
+        {
+            return input;
+        }
+
+        if (Keyboard.current[upKey].isPressed)
+        {
+            input.MoveZ += 1f;
+        }
+
+        if (Keyboard.current[downKey].isPressed)
+        {
+            input.MoveZ -= 1f;
+        }
+
+        if (Keyboard.current[leftKey].isPressed)
+        {
+            input.MoveX -= 1f;
+        }
+
+        if (Keyboard.current[rightKey].isPressed)
+        {
+            input.MoveX += 1f;
+        }
+
+        input.Jump = Keyboard.current[jumpKey].wasPressedThisFrame;
+        input.Attack = Keyboard.current[attackKey].wasPressedThisFrame;
+        input.SkillOne = Keyboard.current[skillOneKey].wasPressedThisFrame;
+        input.SkillTwo = Keyboard.current[skillTwoKey].wasPressedThisFrame;
+        return input;
+    }
+
+    public void ApplyNetworkState(Vector3 position, Quaternion rotation, int health)
+    {
+        transform.position = position;
+        transform.rotation = rotation;
+        Health = Mathf.Clamp(health, 0, maxHealth);
+        moveVelocity = Vector3.zero;
+        pushVelocity = Vector3.zero;
+    }
+
+    public string GetHudText(string label, string jumpName, string skillOneName, string skillTwoName)
+    {
+        return $"{label} HP: {Health}\nAbility: {GetAbilityName()}\nJump: {jumpName}  {skillOneName}: {GetSkillName(1)}  {skillTwoName}: {GetSkillName(2)}";
+    }
+
+    public void TakeDamage(int damage)
+    {
+        if (Time.time < shieldEndTime)
+        {
+            damage = Mathf.CeilToInt(damage * 0.45f);
+        }
+
+        Health = Mathf.Max(Health - damage, 0);
+    }
+
+    public void Kill()
+    {
+        Health = 0;
+    }
+
+    public void Heal(int amount)
+    {
+        Health = Mathf.Min(Health + amount, maxHealth);
+    }
+
+    public void AddPush(Vector3 force)
+    {
+        pushVelocity += force;
+    }
+
+    public void ApplySlow(float duration)
+    {
+        slowEndTime = Mathf.Max(slowEndTime, Time.time + duration);
+    }
+
+    public void ApplyStun(float duration)
+    {
+        stunEndTime = Mathf.Max(stunEndTime, Time.time + duration);
+    }
+
+    public void ApplyPoison()
+    {
+        poisonTicksLeft = 4;
+        poisonTickTime = Time.time + 0.5f;
+    }
+
+    private void Awake()
+    {
+        controller = GetComponent<CharacterController>();
+        Health = maxHealth;
+    }
+
+    private void Update()
+    {
+        if (Keyboard.current == null || Health <= 0)
+        {
+            return;
+        }
+
+        if (acceptsLocalInput)
+        {
+            activeInput = ReadLocalInput();
+        }
+        else if (acceptsExternalInput)
+        {
+            activeInput = externalInput;
+            externalInput.Attack = false;
+            externalInput.SkillOne = false;
+            externalInput.SkillTwo = false;
+            externalInput.Jump = false;
+        }
+        else
+        {
+            HideExpiredAttackVisual();
+            return;
+        }
+
+        UpdateStatusEffects();
+        Move();
+        HandleActions();
+        HideExpiredAttackVisual();
+    }
+
+    private void HideExpiredAttackVisual()
+    {
+        if (attackVisual != null && attackVisual.activeSelf && Time.time >= hideAttackVisualTime)
+        {
+            attackVisual.SetActive(false);
+        }
+    }
+
+    private void UpdateStatusEffects()
+    {
+        if (poisonTicksLeft > 0 && Time.time >= poisonTickTime)
+        {
+            TakeDamage(4);
+            poisonTicksLeft--;
+            poisonTickTime = Time.time + 0.5f;
+        }
+    }
+
+    private void Move()
+    {
+        Vector3 rawInput = Vector3.zero;
+
+        if (Time.time >= stunEndTime)
+        {
+            rawInput.x = activeInput.MoveX;
+            rawInput.z = activeInput.MoveZ;
+        }
+
+        if (rawInput.sqrMagnitude > 1f)
+        {
+            rawInput.Normalize();
+        }
+
+        smoothedInput = Vector3.SmoothDamp(smoothedInput, rawInput, ref inputSmoothVelocity, inputSmoothTime);
+
+        float speedMultiplier = 1f;
+        if (Time.time < speedBoostEndTime)
+        {
+            speedMultiplier += 0.45f;
+        }
+
+        if (Time.time < slowEndTime)
+        {
+            speedMultiplier *= 0.55f;
+        }
+
+        Vector3 targetVelocity = smoothedInput * moveSpeed * speedMultiplier;
+        moveVelocity = Vector3.MoveTowards(moveVelocity, targetVelocity, acceleration * Time.deltaTime);
+        pushVelocity = Vector3.MoveTowards(pushVelocity, Vector3.zero, 10f * Time.deltaTime);
+
+        if (controller.isGrounded && verticalVelocity < 0f)
+        {
+            verticalVelocity = -1f;
+        }
+
+        if (controller.isGrounded && activeInput.Jump && Time.time >= stunEndTime)
+        {
+            verticalVelocity = jumpForce;
+        }
+        else
+        {
+            verticalVelocity += Physics.gravity.y * Time.deltaTime;
+        }
+
+        Vector3 frameMovement = (moveVelocity + pushVelocity) * Time.deltaTime;
+        frameMovement.y = verticalVelocity * Time.deltaTime;
+        controller.Move(frameMovement);
+
+        Vector3 lookVelocity = moveVelocity + pushVelocity;
+        if (lookVelocity.sqrMagnitude > 0.04f)
+        {
+            Quaternion targetRotation = Quaternion.LookRotation(lookVelocity.normalized, Vector3.up);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationDegreesPerSecond * Time.deltaTime);
+        }
+    }
+
+    private void HandleActions()
+    {
+        if (activeInput.Attack && Time.time >= nextAttackTime)
+        {
+            BasicAttack();
+        }
+
+        if (activeInput.SkillOne && Time.time >= nextSkillOneTime)
+        {
+            UseSkillOne();
+        }
+
+        if (activeInput.SkillTwo && Time.time >= nextSkillTwoTime)
+        {
+            UseSkillTwo();
+        }
+    }
+
+    private void BasicAttack()
+    {
+        int damage = attackDamage;
+        float range = attackRange;
+        float knockback = 10f;
+        float cooldownMultiplier = 1f;
+        float visualWidth = 0.4f;
+        float visualHeight = 0.32f;
+        float attackLunge = 2.5f;
+        float visualDuration = 0.16f;
+        float hitDot = 0.18f;
+        bool piercesWalls = false;
+        Color hitColor = new Color(1f, 0.85f, 0.15f);
+
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                damage = 14;
+                range = 2.35f;
+                knockback = 12f;
+                cooldownMultiplier = 0.85f;
+                visualWidth = 0.45f;
+                visualHeight = 0.28f;
+                attackLunge = 5.5f;
+                visualDuration = 0.11f;
+                hitDot = 0.05f;
+                hitColor = Color.yellow;
+                break;
+            case DuelAbility.FireMage:
+                damage = 20;
+                range = 2.25f;
+                knockback = 8f;
+                cooldownMultiplier = 1.05f;
+                visualWidth = 0.9f;
+                visualHeight = 0.45f;
+                attackLunge = 1.8f;
+                visualDuration = 0.2f;
+                hitDot = -0.05f;
+                hitColor = Color.red;
+                break;
+            case DuelAbility.IceMage:
+                damage = 12;
+                range = 2.15f;
+                knockback = 6f;
+                visualWidth = 0.75f;
+                visualHeight = 0.35f;
+                attackLunge = 1.5f;
+                visualDuration = 0.18f;
+                hitDot = 0.05f;
+                hitColor = Color.cyan;
+                break;
+            case DuelAbility.Healer:
+                damage = 13;
+                range = 1.85f;
+                knockback = 5f;
+                visualWidth = 0.55f;
+                visualHeight = 0.5f;
+                attackLunge = 1.2f;
+                visualDuration = 0.22f;
+                hitDot = 0.15f;
+                hitColor = Color.green;
+                break;
+            case DuelAbility.Thunder:
+                damage = 15;
+                range = 2.2f;
+                knockback = 8f;
+                cooldownMultiplier = 0.9f;
+                visualWidth = 0.7f;
+                visualHeight = 0.65f;
+                attackLunge = 3.2f;
+                visualDuration = 0.12f;
+                hitDot = -0.02f;
+                hitColor = Color.yellow;
+                break;
+            case DuelAbility.Wind:
+                damage = 11;
+                range = 2.55f;
+                knockback = 16f;
+                cooldownMultiplier = 0.9f;
+                visualWidth = 1f;
+                visualHeight = 0.3f;
+                attackLunge = 2.8f;
+                visualDuration = 0.22f;
+                hitDot = -0.12f;
+                hitColor = Color.white;
+                break;
+            case DuelAbility.Stone:
+                damage = 24;
+                range = 1.5f;
+                knockback = 18f;
+                cooldownMultiplier = 1.25f;
+                visualWidth = 1.05f;
+                visualHeight = 0.75f;
+                attackLunge = 0.8f;
+                visualDuration = 0.24f;
+                hitDot = 0.12f;
+                hitColor = Color.gray;
+                break;
+            case DuelAbility.Shadow:
+                damage = 18;
+                range = 2.05f;
+                knockback = 5f;
+                cooldownMultiplier = 0.85f;
+                visualWidth = 0.32f;
+                visualHeight = 0.25f;
+                attackLunge = 4.8f;
+                visualDuration = 0.1f;
+                hitDot = 0.25f;
+                piercesWalls = true;
+                hitColor = Color.black;
+                break;
+            case DuelAbility.Poison:
+                damage = 10;
+                range = 2.3f;
+                knockback = 5f;
+                visualWidth = 0.85f;
+                visualHeight = 0.38f;
+                attackLunge = 1.6f;
+                visualDuration = 0.24f;
+                hitDot = -0.02f;
+                hitColor = Color.magenta;
+                break;
+            case DuelAbility.Magnet:
+                damage = 13;
+                range = 2.15f;
+                knockback = 3f;
+                visualWidth = 1.05f;
+                visualHeight = 0.55f;
+                attackLunge = 1.4f;
+                visualDuration = 0.22f;
+                hitDot = -0.08f;
+                hitColor = new Color(0.8f, 0.8f, 1f);
+                break;
+        }
+
+        nextAttackTime = Time.time + attackCooldown * cooldownMultiplier;
+        pushVelocity += transform.forward * attackLunge;
+        ShowAttackVisual(hitColor, visualDuration, range, visualWidth, visualHeight);
+
+        if (!IsOpponentInFront(range, hitDot))
+        {
+            return;
+        }
+
+        if (!piercesWalls && IsAttackBlockedByWall())
+        {
+            return;
+        }
+
+        opponent.TakeDamage(damage);
+        opponent.AddPush(transform.forward * knockback);
+        SpawnHitEffect(opponent.transform.position + Vector3.up * 0.7f, hitColor);
+
+        switch (ability)
+        {
+            case DuelAbility.IceMage:
+                opponent.ApplySlow(1.2f);
+                break;
+            case DuelAbility.Healer:
+                Heal(5);
+                break;
+            case DuelAbility.Thunder:
+                opponent.ApplyStun(0.12f);
+                break;
+            case DuelAbility.Shadow:
+                if (Vector3.Dot(transform.forward, opponent.transform.forward) > 0.45f)
+                {
+                    opponent.TakeDamage(8);
+                }
+                break;
+            case DuelAbility.Poison:
+                opponent.ApplyPoison();
+                break;
+            case DuelAbility.Magnet:
+                opponent.AddPush((transform.position - opponent.transform.position).normalized * 5f);
+                break;
+        }
+    }
+
+    private void UseSkillOne()
+    {
+        nextSkillOneTime = Time.time + 4.5f;
+
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                pushVelocity += transform.forward * 12f;
+                break;
+            case DuelAbility.FireMage:
+                ShootProjectile(Color.red, 8f, 18, 0, 0f, false);
+                break;
+            case DuelAbility.IceMage:
+                ShootProjectile(Color.cyan, 7f, 10, 2, 0f, false);
+                break;
+            case DuelAbility.Healer:
+                Heal(18);
+                SpawnEffect(Color.green, 1.4f);
+                break;
+            case DuelAbility.Thunder:
+                AreaDamageAt(transform.position, 3f, 14, Color.yellow, false, true);
+                break;
+            case DuelAbility.Wind:
+                AreaPush(transform.position, 3.2f, 13f, Color.white, false);
+                break;
+            case DuelAbility.Stone:
+                shieldEndTime = Time.time + 3f;
+                SpawnEffect(Color.gray, 1.6f);
+                break;
+            case DuelAbility.Shadow:
+                transform.position += transform.forward * 2.7f;
+                SpawnEffect(Color.black, 1.2f);
+                break;
+            case DuelAbility.Poison:
+                AreaDamageAt(transform.position + transform.forward * 1.8f, 2f, 8, Color.magenta, false, false);
+                if (opponent != null && Vector3.Distance(transform.position + transform.forward * 1.8f, opponent.transform.position) <= 2f)
+                {
+                    opponent.ApplyPoison();
+                }
+                break;
+            case DuelAbility.Magnet:
+                AreaPush(transform.position, 4f, 11f, new Color(0.8f, 0.8f, 1f), true);
+                break;
+        }
+    }
+
+    private void UseSkillTwo()
+    {
+        nextSkillTwoTime = Time.time + 7.5f;
+
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                AreaDamageAt(transform.position + transform.forward * 1.5f, 2f, 24, Color.yellow, false, false);
+                if (opponent != null && Vector3.Distance(transform.position + transform.forward * 1.5f, opponent.transform.position) <= 2f)
+                {
+                    opponent.AddPush(transform.forward * 8f);
+                }
+                break;
+            case DuelAbility.FireMage:
+                AreaDamage(2.5f, 24, Color.red, false, false);
+                break;
+            case DuelAbility.IceMage:
+                AreaDamage(2.4f, 14, Color.cyan, true, false);
+                break;
+            case DuelAbility.Healer:
+                shieldEndTime = Time.time + 4f;
+                Heal(10);
+                SpawnEffect(Color.green, 1.8f);
+                break;
+            case DuelAbility.Thunder:
+                speedBoostEndTime = Time.time + 4f;
+                AreaDamageAt(transform.position, 2.8f, 10, Color.yellow, false, true);
+                break;
+            case DuelAbility.Wind:
+                transform.position += transform.forward * 3.8f;
+                AreaPush(transform.position, 2.8f, 10f, Color.white, false);
+                break;
+            case DuelAbility.Stone:
+                AreaDamage(2.3f, 18, Color.gray, false, true);
+                break;
+            case DuelAbility.Shadow:
+                if (opponent != null)
+                {
+                    transform.position = opponent.transform.position - opponent.transform.forward * 1.4f;
+                    AreaDamageAt(transform.position, 2.2f, 18, Color.black, false, false);
+                }
+                break;
+            case DuelAbility.Poison:
+                AreaDamage(2.6f, 10, Color.magenta, false, false);
+                if (opponent != null && Vector3.Distance(transform.position, opponent.transform.position) <= 2.6f)
+                {
+                    opponent.ApplyPoison();
+                }
+                break;
+            case DuelAbility.Magnet:
+                shieldEndTime = Time.time + 2.5f;
+                AreaPush(transform.position, 3.2f, 9f, new Color(0.8f, 0.8f, 1f), false);
+                break;
+        }
+    }
+
+    private bool IsOpponentInFront(float range)
+    {
+        return IsOpponentInFront(range, 0.25f);
+    }
+
+    private bool IsOpponentInFront(float range, float minimumDot)
+    {
+        if (opponent == null || opponent.Health <= 0)
+        {
+            return false;
+        }
+
+        Vector3 toOpponent = opponent.transform.position - transform.position;
+        return toOpponent.magnitude <= range && Vector3.Dot(transform.forward, toOpponent.normalized) > minimumDot;
+    }
+
+    private bool IsAttackBlockedByWall()
+    {
+        if (opponent == null)
+        {
+            return true;
+        }
+
+        Vector3 start = transform.position + Vector3.up;
+        Vector3 end = opponent.transform.position + Vector3.up;
+        Vector3 direction = end - start;
+        RaycastHit[] hits = Physics.RaycastAll(start, direction.normalized, direction.magnitude);
+
+        foreach (RaycastHit hit in hits)
+        {
+            Transform hitTransform = hit.transform;
+
+            if (hitTransform == transform || hitTransform.IsChildOf(transform) || hitTransform == opponent.transform || hitTransform.IsChildOf(opponent.transform))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private void AreaDamage(float radius, int damage, Color color, bool slow, bool stun)
+    {
+        AreaDamageAt(transform.position, radius, damage, color, slow, stun);
+    }
+
+    private void AreaDamageAt(Vector3 center, float radius, int damage, Color color, bool slow, bool stun)
+    {
+        SpawnEffectAt(center, color, radius);
+
+        if (opponent == null || Vector3.Distance(center, opponent.transform.position) > radius)
+        {
+            return;
+        }
+
+        opponent.TakeDamage(damage);
+
+        if (slow)
+        {
+            opponent.ApplySlow(2.5f);
+        }
+
+        if (stun)
+        {
+            opponent.ApplyStun(0.55f);
+        }
+    }
+
+    private void AreaPush(Vector3 center, float radius, float force, Color color, bool pull)
+    {
+        SpawnEffectAt(center, color, radius);
+
+        if (opponent == null || Vector3.Distance(center, opponent.transform.position) > radius)
+        {
+            return;
+        }
+
+        Vector3 direction = pull ? center - opponent.transform.position : opponent.transform.position - center;
+        if (direction.sqrMagnitude < 0.01f)
+        {
+            direction = transform.forward;
+        }
+
+        opponent.AddPush(direction.normalized * force);
+    }
+
+    private void ShootProjectile(Color color, float speed, int damage, int slowSeconds, float stunSeconds, bool poison)
+    {
+        GameObject projectileObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        projectileObject.name = GetAbilityName() + " Projectile";
+        projectileObject.transform.position = transform.position + transform.forward * 0.9f + Vector3.up * 0.2f;
+        projectileObject.transform.localScale = Vector3.one * 0.45f;
+        projectileObject.GetComponent<Renderer>().material = CreateMaterial(color);
+        Destroy(projectileObject.GetComponent<Collider>());
+        BuildProjectileVisual(projectileObject.transform, color);
+
+        DuelProjectile projectile = projectileObject.AddComponent<DuelProjectile>();
+        projectile.Setup(this, opponent, transform.forward, speed, damage, slowSeconds, stunSeconds, poison);
+    }
+
+    private void BuildProjectileVisual(Transform projectileRoot, Color color)
+    {
+        switch (ability)
+        {
+            case DuelAbility.FireMage:
+                AddEffectShape(projectileRoot, PrimitiveType.Sphere, "Flame Tail", new Vector3(0f, 0f, -0.65f), Vector3.one * 0.55f, Quaternion.identity, new Color(1f, 0.45f, 0.05f));
+                AddEffectShape(projectileRoot, PrimitiveType.Sphere, "Flame Spark", new Vector3(0.28f, 0.14f, -0.35f), Vector3.one * 0.28f, Quaternion.identity, new Color(1f, 0.85f, 0.05f));
+                break;
+            case DuelAbility.IceMage:
+                projectileRoot.localScale = new Vector3(0.22f, 0.22f, 0.85f);
+                projectileRoot.rotation = Quaternion.LookRotation(transform.forward, Vector3.up);
+                AddEffectShape(projectileRoot, PrimitiveType.Cube, "Ice Tip", new Vector3(0f, 0f, 0.55f), Vector3.one * 0.35f, Quaternion.Euler(45f, 45f, 45f), Color.white);
+                break;
+            case DuelAbility.Poison:
+                AddEffectShape(projectileRoot, PrimitiveType.Sphere, "Poison Puff", new Vector3(-0.25f, 0.08f, -0.28f), Vector3.one * 0.38f, Quaternion.identity, new Color(0.55f, 0f, 0.55f));
+                AddEffectShape(projectileRoot, PrimitiveType.Sphere, "Poison Bubble", new Vector3(0.23f, -0.08f, -0.48f), Vector3.one * 0.3f, Quaternion.identity, new Color(0.85f, 0.25f, 0.9f));
+                break;
+        }
+    }
+
+    private void ShowAttackVisual(Color color, float duration)
+    {
+        ShowAttackVisual(color, duration, attackRange);
+    }
+
+    private void ShowAttackVisual(Color color, float duration, float range)
+    {
+        ShowAttackVisual(color, duration, range, 0.28f);
+    }
+
+    private void ShowAttackVisual(Color color, float duration, float range, float width)
+    {
+        ShowAttackVisual(color, duration, range, width, 0.32f);
+    }
+
+    private void ShowAttackVisual(Color color, float duration, float range, float width, float height)
+    {
+        if (attackVisual == null)
+        {
+            return;
+        }
+
+        foreach (Transform child in attackVisual.transform)
+        {
+            Destroy(child.gameObject);
+        }
+
+        attackVisual.transform.localPosition = Vector3.zero;
+        attackVisual.transform.localRotation = Quaternion.identity;
+        attackVisual.transform.localScale = Vector3.one;
+        BuildAttackVisual(color, range, width, height);
+        ConfigureAttackMotion(duration, range);
+        attackVisual.SetActive(true);
+        hideAttackVisualTime = Time.time + duration;
+    }
+
+    private void ConfigureAttackMotion(float duration, float range)
+    {
+        AttackVisualMotion motion = attackVisual.GetComponent<AttackVisualMotion>();
+        if (motion == null)
+        {
+            motion = attackVisual.AddComponent<AttackVisualMotion>();
+        }
+
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                motion.Setup(duration, new Vector3(0f, 0f, -0.65f), new Vector3(0f, 0f, range * 0.75f), new Vector3(1f, 1f, 0.35f), new Vector3(1f, 1f, 1.2f), 0f, 0f, 0f);
+                break;
+            case DuelAbility.FireMage:
+                motion.Setup(duration, Vector3.zero, new Vector3(0f, 0.25f, 0.25f), Vector3.one * 0.45f, Vector3.one * 1.25f, 0f, 55f, 0.08f);
+                break;
+            case DuelAbility.IceMage:
+                motion.Setup(duration, new Vector3(0f, 0.05f, 0f), new Vector3(0f, 0.2f, 0.25f), Vector3.one * 0.75f, Vector3.one * 1.05f, 0f, -180f, 0f);
+                break;
+            case DuelAbility.Healer:
+                motion.Setup(duration, Vector3.zero, Vector3.zero, Vector3.one * 0.35f, Vector3.one * 1.35f, 0f, 0f, 0f);
+                break;
+            case DuelAbility.Thunder:
+                motion.Setup(duration, new Vector3(-0.12f, 0.18f, 0f), new Vector3(0.12f, -0.08f, 0.35f), Vector3.one * 0.65f, Vector3.one * 1.15f, 0f, 260f, 0.18f);
+                break;
+            case DuelAbility.Wind:
+                motion.Setup(duration, Vector3.zero, new Vector3(0f, 0.15f, 0.1f), Vector3.one * 0.55f, Vector3.one * 1.35f, 720f, 0f, 0f);
+                break;
+            case DuelAbility.Stone:
+                motion.Setup(duration, new Vector3(0f, 0.65f, 0.25f), new Vector3(0f, -0.12f, 0.08f), Vector3.one * 1.15f, Vector3.one * 0.95f, 0f, -95f, 0f);
+                break;
+            case DuelAbility.Shadow:
+                motion.Setup(duration, new Vector3(-0.55f, 0f, -0.25f), new Vector3(0.45f, 0f, range * 0.65f), new Vector3(0.7f, 1f, 0.45f), new Vector3(1.05f, 1f, 1.35f), 0f, 0f, 0.05f);
+                break;
+            case DuelAbility.Poison:
+                motion.Setup(duration, Vector3.zero, new Vector3(0f, 0.18f, 0.15f), Vector3.one * 0.55f, Vector3.one * 1.45f, 70f, 0f, 0.12f);
+                break;
+            default:
+                motion.Setup(duration, Vector3.zero, new Vector3(0f, 0.05f, 0.05f), Vector3.one * 0.7f, Vector3.one * 1.2f, -540f, 0f, 0f);
+                break;
+        }
+    }
+
+    private void BuildAttackVisual(Color color, float range, float width, float height)
+    {
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                AddAttackShape(PrimitiveType.Cube, "Dash Blade", new Vector3(0f, 0.1f, range * 0.55f), new Vector3(width, height, range), Quaternion.Euler(0f, 0f, 18f), color);
+                AddAttackShape(PrimitiveType.Cube, "Dash Afterimage", new Vector3(-0.22f, 0.05f, range * 0.35f), new Vector3(width * 0.45f, height * 0.7f, range * 0.55f), Quaternion.Euler(0f, 0f, -18f), new Color(1f, 1f, 0.4f));
+                break;
+            case DuelAbility.FireMage:
+                AddAttackShape(PrimitiveType.Sphere, "Fire Core", new Vector3(0f, 0.15f, range * 0.55f), new Vector3(width, height, range * 0.45f), Quaternion.identity, color);
+                AddAttackShape(PrimitiveType.Sphere, "Fire Spark Left", new Vector3(-width * 0.45f, 0.28f, range * 0.45f), Vector3.one * 0.35f, Quaternion.identity, new Color(1f, 0.45f, 0.05f));
+                AddAttackShape(PrimitiveType.Sphere, "Fire Spark Right", new Vector3(width * 0.45f, 0.02f, range * 0.68f), Vector3.one * 0.28f, Quaternion.identity, new Color(1f, 0.75f, 0.1f));
+                break;
+            case DuelAbility.IceMage:
+                AddAttackShape(PrimitiveType.Cube, "Ice Spear", new Vector3(0f, 0.12f, range * 0.58f), new Vector3(width * 0.35f, height, range), Quaternion.Euler(0f, 0f, 45f), color);
+                AddAttackShape(PrimitiveType.Cube, "Ice Crystal", new Vector3(width * 0.35f, 0.08f, range * 0.42f), Vector3.one * 0.35f, Quaternion.Euler(0f, 45f, 45f), Color.white);
+                break;
+            case DuelAbility.Healer:
+                AddAttackShape(PrimitiveType.Sphere, "Heal Pulse", new Vector3(0f, 0.18f, range * 0.48f), new Vector3(width * 1.2f, height * 1.2f, range * 0.5f), Quaternion.identity, color);
+                AddAttackShape(PrimitiveType.Cube, "Heal Cross V", new Vector3(0f, 0.2f, range * 0.5f), new Vector3(0.18f, 0.7f, 0.18f), Quaternion.identity, Color.white);
+                AddAttackShape(PrimitiveType.Cube, "Heal Cross H", new Vector3(0f, 0.2f, range * 0.5f), new Vector3(0.7f, 0.18f, 0.18f), Quaternion.identity, Color.white);
+                break;
+            case DuelAbility.Thunder:
+                AddAttackShape(PrimitiveType.Cube, "Thunder Bolt A", new Vector3(-0.15f, 0.18f, range * 0.45f), new Vector3(width * 0.35f, height, range * 0.55f), Quaternion.Euler(0f, 0f, 30f), color);
+                AddAttackShape(PrimitiveType.Cube, "Thunder Bolt B", new Vector3(0.18f, 0.05f, range * 0.65f), new Vector3(width * 0.3f, height, range * 0.45f), Quaternion.Euler(0f, 0f, -35f), Color.white);
+                break;
+            case DuelAbility.Wind:
+                AddAttackShape(PrimitiveType.Cylinder, "Wind Arc Wide", new Vector3(0f, 0.08f, range * 0.5f), new Vector3(width, 0.08f, range * 0.35f), Quaternion.Euler(90f, 0f, 0f), color);
+                AddAttackShape(PrimitiveType.Cylinder, "Wind Arc Thin", new Vector3(0f, 0.32f, range * 0.68f), new Vector3(width * 0.7f, 0.06f, range * 0.25f), Quaternion.Euler(90f, 0f, 0f), new Color(0.75f, 0.95f, 1f));
+                break;
+            case DuelAbility.Stone:
+                AddAttackShape(PrimitiveType.Cube, "Stone Hammer", new Vector3(0f, 0.08f, range * 0.45f), new Vector3(width, height, range * 0.42f), Quaternion.Euler(0f, 0f, -8f), color);
+                AddAttackShape(PrimitiveType.Cube, "Stone Handle", new Vector3(0f, -0.05f, range * 0.25f), new Vector3(0.22f, 0.22f, range * 0.6f), Quaternion.identity, new Color(0.25f, 0.25f, 0.25f));
+                break;
+            case DuelAbility.Shadow:
+                AddAttackShape(PrimitiveType.Cube, "Shadow Needle", new Vector3(0f, 0.12f, range * 0.6f), new Vector3(width, height, range), Quaternion.Euler(0f, 0f, -24f), color);
+                AddAttackShape(PrimitiveType.Cube, "Shadow Trail", new Vector3(0.18f, 0.05f, range * 0.38f), new Vector3(width * 0.45f, height * 0.7f, range * 0.6f), Quaternion.Euler(0f, 0f, 24f), new Color(0.18f, 0.18f, 0.22f));
+                break;
+            case DuelAbility.Poison:
+                AddAttackShape(PrimitiveType.Sphere, "Poison Cloud", new Vector3(0f, 0.12f, range * 0.5f), new Vector3(width, height, range * 0.42f), Quaternion.identity, color);
+                AddAttackShape(PrimitiveType.Sphere, "Poison Puff A", new Vector3(-width * 0.35f, 0.2f, range * 0.62f), Vector3.one * 0.32f, Quaternion.identity, new Color(0.55f, 0f, 0.55f));
+                AddAttackShape(PrimitiveType.Sphere, "Poison Puff B", new Vector3(width * 0.4f, 0.04f, range * 0.35f), Vector3.one * 0.26f, Quaternion.identity, new Color(0.8f, 0.2f, 0.9f));
+                break;
+            default:
+                AddAttackShape(PrimitiveType.Cylinder, "Magnet Field", new Vector3(0f, 0.12f, range * 0.48f), new Vector3(width, 0.08f, range * 0.35f), Quaternion.Euler(90f, 0f, 0f), color);
+                AddAttackShape(PrimitiveType.Sphere, "Magnet Core", new Vector3(0f, 0.12f, range * 0.48f), Vector3.one * 0.34f, Quaternion.identity, Color.white);
+                break;
+        }
+    }
+
+    private void AddAttackShape(PrimitiveType type, string shapeName, Vector3 localPosition, Vector3 localScale, Quaternion localRotation, Color color)
+    {
+        GameObject shape = GameObject.CreatePrimitive(type);
+        shape.name = shapeName;
+        shape.transform.SetParent(attackVisual.transform);
+        shape.transform.localPosition = localPosition;
+        shape.transform.localRotation = localRotation;
+        shape.transform.localScale = localScale;
+        shape.GetComponent<Renderer>().material = CreateMaterial(color);
+        Destroy(shape.GetComponent<Collider>());
+    }
+
+    private void SpawnEffect(Color color, float size)
+    {
+        SpawnEffectAt(transform.position + Vector3.up * 0.1f, color, size);
+    }
+
+    private void SpawnEffectAt(Vector3 position, Color color, float size)
+    {
+        GameObject effect = new GameObject(GetAbilityName() + " Skill Effect");
+        effect.transform.position = position + Vector3.up * 0.12f;
+
+        GameObject visualRoot = new GameObject("Visual");
+        visualRoot.transform.SetParent(effect.transform);
+        visualRoot.transform.localPosition = Vector3.zero;
+        visualRoot.transform.localRotation = Quaternion.identity;
+        visualRoot.transform.localScale = Vector3.one;
+
+        BuildSkillEffect(visualRoot.transform, color, size);
+
+        AttackVisualMotion motion = visualRoot.AddComponent<AttackVisualMotion>();
+        ConfigureSkillEffectMotion(motion, size);
+        Destroy(effect, 0.45f);
+    }
+
+    private void BuildSkillEffect(Transform root, Color color, float size)
+    {
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                AddEffectShape(root, PrimitiveType.Cube, "Dash Shock Line", new Vector3(0f, 0.08f, 0f), new Vector3(size * 0.32f, 0.16f, size * 1.35f), Quaternion.Euler(0f, transform.eulerAngles.y, 0f), color);
+                AddEffectShape(root, PrimitiveType.Cube, "Dash Slash Cross", new Vector3(0f, 0.18f, 0f), new Vector3(size * 0.9f, 0.1f, size * 0.2f), Quaternion.Euler(0f, transform.eulerAngles.y + 28f, 0f), Color.white);
+                break;
+            case DuelAbility.FireMage:
+                AddEffectShape(root, PrimitiveType.Sphere, "Fire Blast Core", Vector3.zero, Vector3.one * size, Quaternion.identity, color);
+                AddEffectShape(root, PrimitiveType.Sphere, "Fire Blast Hot", new Vector3(size * 0.18f, 0.18f, 0f), Vector3.one * size * 0.55f, Quaternion.identity, new Color(1f, 0.8f, 0.05f));
+                AddEffectShape(root, PrimitiveType.Sphere, "Fire Blast Ember", new Vector3(-size * 0.25f, 0.05f, size * 0.2f), Vector3.one * size * 0.35f, Quaternion.identity, new Color(1f, 0.35f, 0f));
+                break;
+            case DuelAbility.IceMage:
+                AddEffectShape(root, PrimitiveType.Cube, "Ice Field", Vector3.zero, new Vector3(size * 0.8f, 0.12f, size * 0.8f), Quaternion.Euler(0f, 45f, 0f), color);
+                AddEffectShape(root, PrimitiveType.Cube, "Ice Spike A", new Vector3(size * 0.25f, 0.35f, 0f), new Vector3(0.18f, size * 0.8f, 0.18f), Quaternion.Euler(20f, 30f, 12f), Color.white);
+                AddEffectShape(root, PrimitiveType.Cube, "Ice Spike B", new Vector3(-size * 0.2f, 0.25f, size * 0.18f), new Vector3(0.16f, size * 0.6f, 0.16f), Quaternion.Euler(-18f, 70f, -10f), color);
+                break;
+            case DuelAbility.Healer:
+                AddEffectShape(root, PrimitiveType.Sphere, "Heal Dome", Vector3.zero, Vector3.one * size, Quaternion.identity, color);
+                AddEffectShape(root, PrimitiveType.Cube, "Heal Cross Vertical", new Vector3(0f, 0.2f, 0f), new Vector3(0.22f, size * 0.9f, 0.22f), Quaternion.identity, Color.white);
+                AddEffectShape(root, PrimitiveType.Cube, "Heal Cross Horizontal", new Vector3(0f, 0.2f, 0f), new Vector3(size * 0.9f, 0.22f, 0.22f), Quaternion.identity, Color.white);
+                break;
+            case DuelAbility.Thunder:
+                AddEffectShape(root, PrimitiveType.Cube, "Lightning Strike A", new Vector3(-0.2f, size * 0.25f, 0f), new Vector3(0.22f, size * 1.25f, 0.22f), Quaternion.Euler(0f, 0f, 28f), color);
+                AddEffectShape(root, PrimitiveType.Cube, "Lightning Strike B", new Vector3(0.22f, size * 0.05f, 0f), new Vector3(0.18f, size * 0.95f, 0.18f), Quaternion.Euler(0f, 0f, -32f), Color.white);
+                AddEffectShape(root, PrimitiveType.Cylinder, "Thunder Ring", Vector3.zero, new Vector3(size * 0.75f, 0.05f, size * 0.75f), Quaternion.Euler(90f, 0f, 0f), color);
+                break;
+            case DuelAbility.Wind:
+                AddEffectShape(root, PrimitiveType.Cylinder, "Wind Ring Outer", Vector3.zero, new Vector3(size, 0.06f, size), Quaternion.Euler(90f, 0f, 0f), color);
+                AddEffectShape(root, PrimitiveType.Cylinder, "Wind Ring Inner", new Vector3(0f, 0.2f, 0f), new Vector3(size * 0.65f, 0.05f, size * 0.65f), Quaternion.Euler(90f, 0f, 0f), new Color(0.75f, 0.95f, 1f));
+                AddEffectShape(root, PrimitiveType.Cube, "Wind Streak", new Vector3(0f, 0.25f, size * 0.35f), new Vector3(size * 0.12f, 0.08f, size * 0.7f), Quaternion.Euler(0f, 35f, 0f), Color.white);
+                break;
+            case DuelAbility.Stone:
+                AddEffectShape(root, PrimitiveType.Cube, "Stone Plate", Vector3.zero, new Vector3(size * 0.8f, 0.22f, size * 0.8f), Quaternion.Euler(0f, 18f, 0f), color);
+                AddEffectShape(root, PrimitiveType.Cube, "Stone Chunk A", new Vector3(size * 0.25f, 0.35f, 0f), Vector3.one * size * 0.28f, Quaternion.Euler(25f, 45f, 12f), color);
+                AddEffectShape(root, PrimitiveType.Cube, "Stone Chunk B", new Vector3(-size * 0.25f, 0.22f, -size * 0.2f), Vector3.one * size * 0.22f, Quaternion.Euler(-20f, 10f, 40f), new Color(0.25f, 0.25f, 0.25f));
+                break;
+            case DuelAbility.Shadow:
+                AddEffectShape(root, PrimitiveType.Cube, "Shadow Rift", Vector3.zero, new Vector3(size * 0.18f, 0.12f, size * 1.2f), Quaternion.Euler(0f, transform.eulerAngles.y + 25f, 0f), color);
+                AddEffectShape(root, PrimitiveType.Cube, "Shadow Echo", new Vector3(0.22f, 0.08f, 0f), new Vector3(size * 0.12f, 0.08f, size * 0.9f), Quaternion.Euler(0f, transform.eulerAngles.y - 20f, 0f), new Color(0.18f, 0.18f, 0.22f));
+                break;
+            case DuelAbility.Poison:
+                AddEffectShape(root, PrimitiveType.Sphere, "Poison Cloud Main", Vector3.zero, Vector3.one * size, Quaternion.identity, color);
+                AddEffectShape(root, PrimitiveType.Sphere, "Poison Cloud A", new Vector3(size * 0.35f, 0.12f, 0f), Vector3.one * size * 0.55f, Quaternion.identity, new Color(0.55f, 0f, 0.55f));
+                AddEffectShape(root, PrimitiveType.Sphere, "Poison Cloud B", new Vector3(-size * 0.25f, 0.22f, size * 0.22f), Vector3.one * size * 0.42f, Quaternion.identity, new Color(0.8f, 0.2f, 0.9f));
+                break;
+            default:
+                AddEffectShape(root, PrimitiveType.Cylinder, "Magnet Outer Ring", Vector3.zero, new Vector3(size, 0.08f, size), Quaternion.Euler(90f, 0f, 0f), color);
+                AddEffectShape(root, PrimitiveType.Cylinder, "Magnet Inner Ring", new Vector3(0f, 0.18f, 0f), new Vector3(size * 0.55f, 0.06f, size * 0.55f), Quaternion.Euler(90f, 0f, 0f), Color.white);
+                AddEffectShape(root, PrimitiveType.Sphere, "Magnet Core", new Vector3(0f, 0.22f, 0f), Vector3.one * size * 0.18f, Quaternion.identity, color);
+                break;
+        }
+    }
+
+    private void ConfigureSkillEffectMotion(AttackVisualMotion motion, float size)
+    {
+        switch (ability)
+        {
+            case DuelAbility.Thunder:
+                motion.Setup(0.32f, new Vector3(0f, 0.6f, 0f), Vector3.zero, Vector3.one * 0.45f, Vector3.one * 1.15f, 0f, 260f, 0.16f);
+                break;
+            case DuelAbility.Wind:
+            case DuelAbility.Magnet:
+                motion.Setup(0.42f, Vector3.zero, new Vector3(0f, 0.12f, 0f), Vector3.one * 0.25f, Vector3.one * 1.25f, ability == DuelAbility.Wind ? 900f : -720f, 0f, 0f);
+                break;
+            case DuelAbility.Stone:
+                motion.Setup(0.36f, new Vector3(0f, 0.75f, 0f), Vector3.zero, Vector3.one * 1.15f, Vector3.one, 0f, -60f, 0.08f);
+                break;
+            case DuelAbility.Healer:
+            case DuelAbility.Poison:
+            case DuelAbility.FireMage:
+                motion.Setup(0.42f, Vector3.zero, new Vector3(0f, 0.18f, 0f), Vector3.one * 0.2f, Vector3.one * 1.25f, ability == DuelAbility.Poison ? 80f : 0f, 0f, 0.04f);
+                break;
+            case DuelAbility.Shadow:
+            case DuelAbility.DashMaster:
+                motion.Setup(0.28f, new Vector3(0f, 0f, -0.25f), new Vector3(0f, 0f, 0.3f), Vector3.one * 0.6f, Vector3.one * 1.15f, 0f, 0f, 0.06f);
+                break;
+            default:
+                motion.Setup(0.36f, Vector3.zero, new Vector3(0f, 0.16f, 0f), Vector3.one * 0.35f, Vector3.one * 1.15f, 0f, 0f, 0f);
+                break;
+        }
+    }
+
+    private void AddEffectShape(Transform parent, PrimitiveType type, string shapeName, Vector3 localPosition, Vector3 localScale, Quaternion localRotation, Color color)
+    {
+        GameObject shape = GameObject.CreatePrimitive(type);
+        shape.name = shapeName;
+        shape.transform.SetParent(parent);
+        shape.transform.localPosition = localPosition;
+        shape.transform.localScale = localScale;
+        shape.transform.localRotation = localRotation;
+        shape.GetComponent<Renderer>().material = CreateMaterial(color);
+        Destroy(shape.GetComponent<Collider>());
+    }
+
+    private void SpawnHitEffect(Vector3 position, Color color)
+    {
+        GameObject root = new GameObject("Hit Effect");
+        root.transform.position = position;
+
+        switch (ability)
+        {
+            case DuelAbility.Stone:
+                AddHitShape(root.transform, PrimitiveType.Cube, Vector3.zero, Vector3.one * 0.7f, Quaternion.Euler(12f, 35f, 8f), color);
+                AddHitShape(root.transform, PrimitiveType.Cube, new Vector3(0.35f, 0.15f, 0f), Vector3.one * 0.35f, Quaternion.Euler(40f, 0f, 25f), color);
+                break;
+            case DuelAbility.Wind:
+            case DuelAbility.Magnet:
+                AddHitShape(root.transform, PrimitiveType.Cylinder, Vector3.zero, new Vector3(0.9f, 0.06f, 0.9f), Quaternion.Euler(90f, 0f, 0f), color);
+                AddHitShape(root.transform, PrimitiveType.Cylinder, new Vector3(0f, 0.18f, 0f), new Vector3(0.55f, 0.05f, 0.55f), Quaternion.Euler(90f, 0f, 0f), Color.white);
+                break;
+            case DuelAbility.Thunder:
+                AddHitShape(root.transform, PrimitiveType.Cube, Vector3.zero, new Vector3(0.22f, 0.9f, 0.22f), Quaternion.Euler(0f, 0f, 35f), color);
+                AddHitShape(root.transform, PrimitiveType.Cube, new Vector3(0.12f, 0.15f, 0f), new Vector3(0.18f, 0.65f, 0.18f), Quaternion.Euler(0f, 0f, -35f), Color.white);
+                break;
+            case DuelAbility.FireMage:
+            case DuelAbility.Poison:
+            case DuelAbility.Healer:
+                AddHitShape(root.transform, PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.75f, Quaternion.identity, color);
+                AddHitShape(root.transform, PrimitiveType.Sphere, new Vector3(0.28f, 0.18f, 0f), Vector3.one * 0.32f, Quaternion.identity, Color.white);
+                break;
+            default:
+                AddHitShape(root.transform, PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.55f, Quaternion.identity, color);
+                AddHitShape(root.transform, PrimitiveType.Cube, new Vector3(0f, 0.04f, 0f), new Vector3(0.9f, 0.12f, 0.12f), Quaternion.Euler(0f, 0f, 35f), color);
+                break;
+        }
+
+        Destroy(root, 0.16f);
+    }
+
+    private void AddHitShape(Transform parent, PrimitiveType type, Vector3 localPosition, Vector3 localScale, Quaternion localRotation, Color color)
+    {
+        GameObject shape = GameObject.CreatePrimitive(type);
+        shape.transform.SetParent(parent);
+        shape.transform.localPosition = localPosition;
+        shape.transform.localScale = localScale;
+        shape.transform.localRotation = localRotation;
+        shape.GetComponent<Renderer>().material = CreateMaterial(color);
+        Destroy(shape.GetComponent<Collider>());
+    }
+
+    private Material CreateMaterial(Color color)
+    {
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Standard");
+        }
+
+        Material material = new Material(shader);
+        material.color = color;
+        return material;
+    }
+
+    private string GetAbilityName()
+    {
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                return "Dash";
+            case DuelAbility.FireMage:
+                return "Fire";
+            case DuelAbility.IceMage:
+                return "Ice";
+            case DuelAbility.Healer:
+                return "Heal";
+            case DuelAbility.Thunder:
+                return "Thunder";
+            case DuelAbility.Wind:
+                return "Wind";
+            case DuelAbility.Stone:
+                return "Stone";
+            case DuelAbility.Shadow:
+                return "Shadow";
+            case DuelAbility.Poison:
+                return "Poison";
+            default:
+                return "Magnet";
+        }
+    }
+
+    private string GetSkillName(int skillNumber)
+    {
+        switch (ability)
+        {
+            case DuelAbility.DashMaster:
+                return skillNumber == 1 ? "Dash" : "Slash";
+            case DuelAbility.FireMage:
+                return skillNumber == 1 ? "Fireball" : "Burst";
+            case DuelAbility.IceMage:
+                return skillNumber == 1 ? "Ice Shot" : "Freeze";
+            case DuelAbility.Healer:
+                return skillNumber == 1 ? "Heal" : "Shield";
+            case DuelAbility.Thunder:
+                return skillNumber == 1 ? "Bolt" : "Speed";
+            case DuelAbility.Wind:
+                return skillNumber == 1 ? "Push" : "Blink";
+            case DuelAbility.Stone:
+                return skillNumber == 1 ? "Armor" : "Quake";
+            case DuelAbility.Shadow:
+                return skillNumber == 1 ? "Step" : "Backstab";
+            case DuelAbility.Poison:
+                return skillNumber == 1 ? "Dart" : "Cloud";
+            default:
+                return skillNumber == 1 ? "Pull" : "Repel";
+        }
+    }
+}
+
+public class DuelProjectile : MonoBehaviour
+{
+    private DuelPlayer owner;
+    private DuelPlayer target;
+    private Vector3 direction;
+    private float speed;
+    private int damage;
+    private int slowSeconds;
+    private float stunSeconds;
+    private bool poison;
+    private float destroyTime;
+
+    public void Setup(DuelPlayer projectileOwner, DuelPlayer projectileTarget, Vector3 moveDirection, float projectileSpeed, int projectileDamage, int projectileSlowSeconds, float projectileStunSeconds, bool projectilePoison)
+    {
+        owner = projectileOwner;
+        target = projectileTarget;
+        direction = moveDirection.normalized;
+        speed = projectileSpeed;
+        damage = projectileDamage;
+        slowSeconds = projectileSlowSeconds;
+        stunSeconds = projectileStunSeconds;
+        poison = projectilePoison;
+        destroyTime = Time.time + 2.2f;
+    }
+
+    private void Update()
+    {
+        transform.position += direction * speed * Time.deltaTime;
+
+        if (target != null && target.Health > 0 && Vector3.Distance(transform.position, target.transform.position + Vector3.up) < 0.85f)
+        {
+            target.TakeDamage(damage);
+
+            if (slowSeconds > 0)
+            {
+                target.ApplySlow(slowSeconds);
+            }
+
+            if (stunSeconds > 0f)
+            {
+                target.ApplyStun(stunSeconds);
+            }
+
+            if (poison)
+            {
+                target.ApplyPoison();
+            }
+
+            Destroy(gameObject);
+            return;
+        }
+
+        if (Time.time >= destroyTime)
+        {
+            Destroy(gameObject);
+        }
+    }
+}
+
+public class AttackVisualMotion : MonoBehaviour
+{
+    private Vector3 startPosition;
+    private Vector3 endPosition;
+    private Vector3 startScale;
+    private Vector3 endScale;
+    private float duration;
+    private float startTime;
+    private float yawSpinDegrees;
+    private float rollDegrees;
+    private float shakeAmount;
+
+    public void Setup(float motionDuration, Vector3 fromLocalPosition, Vector3 toLocalPosition, Vector3 fromLocalScale, Vector3 toLocalScale, float spinYaw, float roll, float shake)
+    {
+        duration = Mathf.Max(0.01f, motionDuration);
+        startPosition = fromLocalPosition;
+        endPosition = toLocalPosition;
+        startScale = fromLocalScale;
+        endScale = toLocalScale;
+        yawSpinDegrees = spinYaw;
+        rollDegrees = roll;
+        shakeAmount = shake;
+        startTime = Time.time;
+
+        transform.localPosition = startPosition;
+        transform.localScale = startScale;
+        transform.localRotation = Quaternion.identity;
+    }
+
+    private void Update()
+    {
+        float t = Mathf.Clamp01((Time.time - startTime) / duration);
+        float eased = 1f - Mathf.Pow(1f - t, 3f);
+        Vector3 shake = Vector3.zero;
+
+        if (shakeAmount > 0f)
+        {
+            float wave = Mathf.Sin(t * Mathf.PI * 8f);
+            shake = new Vector3(wave * shakeAmount, -wave * shakeAmount * 0.5f, 0f);
+        }
+
+        transform.localPosition = Vector3.Lerp(startPosition, endPosition, eased) + shake;
+        transform.localScale = Vector3.Lerp(startScale, endScale, Mathf.Sin(t * Mathf.PI * 0.5f));
+        transform.localRotation = Quaternion.Euler(0f, yawSpinDegrees * t, rollDegrees * Mathf.Sin(t * Mathf.PI));
+    }
+}
+
+public class SplitScreenCameraFollow : MonoBehaviour
+{
+    private Transform target;
+    private Vector3 velocity;
+    private float mapScale = 1f;
+
+    public void SetTarget(Transform followTarget)
+    {
+        target = followTarget;
+        SnapToTarget();
+    }
+
+    public void SetMapScale(float scale)
+    {
+        mapScale = scale;
+    }
+
+    private void LateUpdate()
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        Vector3 desiredPosition = GetDesiredPosition();
+        transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref velocity, 0.12f);
+        transform.rotation = Quaternion.Euler(58f, 0f, 0f);
+    }
+
+    private void SnapToTarget()
+    {
+        if (target == null)
+        {
+            return;
+        }
+
+        transform.position = GetDesiredPosition();
+        transform.rotation = Quaternion.Euler(58f, 0f, 0f);
+    }
+
+    private Vector3 GetDesiredPosition()
+    {
+        return target.position + new Vector3(0f, 11f * mapScale, -8.5f * mapScale);
+    }
+}
