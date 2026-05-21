@@ -90,17 +90,17 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             ProcessMessage(message);
         }
 
-        if (Input.GetKeyDown(KeyCode.F1))
+        if (Input.GetKeyDown(KeyCode.F1) || Input.GetKeyDown(KeyCode.Alpha1))
         {
             CreateRoom();
         }
 
-        if (Input.GetKeyDown(KeyCode.F2))
+        if (Input.GetKeyDown(KeyCode.F2) || Input.GetKeyDown(KeyCode.Alpha2))
         {
             JoinOpenRoom();
         }
 
-        if (Input.GetKeyDown(KeyCode.F3))
+        if (Input.GetKeyDown(KeyCode.F3) || Input.GetKeyDown(KeyCode.Alpha3))
         {
             LeaveRoom();
         }
@@ -255,6 +255,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         }
     }
 
+#if !UNITY_WEBGL
     private void OnGUI()
     {
         const float width = 300f;
@@ -296,6 +297,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         GUI.enabled = true;
         GUI.color = oldColor;
     }
+#endif
 
     public string Status => status;
     public string RoomCode => roomCode;

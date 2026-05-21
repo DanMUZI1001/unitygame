@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 public enum DuelAbility
 {
@@ -56,6 +57,7 @@ public class OneVsOneGame : MonoBehaviour
     private Transform mapRoot;
     private Transform lobbyRoot;
     private readonly Dictionary<string, GameObject> lobbyAvatars = new Dictionary<string, GameObject>();
+    private readonly Dictionary<Color32, Material> visibleMaterials = new Dictionary<Color32, Material>();
     private float timeLeft;
     private string winnerMessage = "";
     private int currentMapIndex;
@@ -74,6 +76,15 @@ public class OneVsOneGame : MonoBehaviour
         }
 
         new GameObject("1v1 Game").AddComponent<OneVsOneGame>();
+    }
+
+    [Preserve]
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void PreserveRuntimePrimitiveColliders()
+    {
+        _ = typeof(BoxCollider);
+        _ = typeof(CapsuleCollider);
+        _ = typeof(SphereCollider);
     }
 
     private void Start()
@@ -200,7 +211,7 @@ public class OneVsOneGame : MonoBehaviour
         currentMapSize = new Vector2(24f, 16f);
         CreateBlock("Lobby Floor", Vector3.zero, new Vector3(24f, 0.25f, 16f), new Color(0.22f, 0.33f, 0.32f), true);
         CreateBlock("Lobby Center", new Vector3(0f, 0.15f, 0f), new Vector3(4f, 0.35f, 4f), new Color(0.32f, 0.42f, 0.38f), true);
-        CreateLobbyText("LobbyText", "ONLINE LOBBY\nF1 Create Room\nF2 Join Open Room\nF3 Leave Room", new Vector3(0f, 0.35f, 6.1f), 0.38f);
+        CreateLobbyText("LobbyText", "ONLINE LOBBY\n1 / F1 Create Room\n2 / F2 Join Open Room\n3 / F3 Leave Room", new Vector3(0f, 0.35f, 6.1f), 0.38f);
         SetupLobbyCameras();
     }
 
@@ -970,6 +981,7 @@ public class OneVsOneGame : MonoBehaviour
         }
     }
 
+#if !UNITY_WEBGL
     private void OnGUI()
     {
         GUI.color = Color.white;
@@ -1006,6 +1018,7 @@ public class OneVsOneGame : MonoBehaviour
         GUI.Label(new Rect(rect.x + 10f, rect.y + 8f, rect.width - 20f, rect.height - 16f), text);
         GUI.color = oldColor;
     }
+#endif
 
     private void CreateNameTag(Transform parent, string text)
     {
@@ -1023,7 +1036,17 @@ public class OneVsOneGame : MonoBehaviour
 
     private Material CreateMaterial(Color color)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+        }
+
+        if (shader == null)
+        {
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        }
+
         if (shader == null)
         {
             shader = Shader.Find("Unlit/Color");
@@ -1032,6 +1055,11 @@ public class OneVsOneGame : MonoBehaviour
         if (shader == null)
         {
             shader = Shader.Find("Standard");
+        }
+
+        if (shader == null)
+        {
+            shader = Shader.Find("Sprites/Default");
         }
 
         Material material = new Material(shader);
@@ -1049,6 +1077,19 @@ public class OneVsOneGame : MonoBehaviour
         return material;
     }
 
+    private Material GetVisibleMaterial(Color color)
+    {
+        Color32 key = color;
+        if (visibleMaterials.TryGetValue(key, out Material material) && material != null)
+        {
+            return material;
+        }
+
+        material = CreateMaterial(color);
+        visibleMaterials[key] = material;
+        return material;
+    }
+
     private void ApplyVisibleColor(Renderer renderer, Color color)
     {
         if (renderer == null)
@@ -1057,6 +1098,7 @@ public class OneVsOneGame : MonoBehaviour
         }
 
         renderer.enabled = true;
+        renderer.sharedMaterial = GetVisibleMaterial(color);
         MaterialPropertyBlock block = new MaterialPropertyBlock();
         renderer.GetPropertyBlock(block);
         block.SetColor("_BaseColor", color);
@@ -2159,7 +2201,17 @@ public class DuelPlayer : MonoBehaviour
 
     private Material CreateMaterial(Color color)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+        }
+
+        if (shader == null)
+        {
+            shader = Shader.Find("Universal Render Pipeline/Unlit");
+        }
+
         if (shader == null)
         {
             shader = Shader.Find("Unlit/Color");
@@ -2168,6 +2220,11 @@ public class DuelPlayer : MonoBehaviour
         if (shader == null)
         {
             shader = Shader.Find("Standard");
+        }
+
+        if (shader == null)
+        {
+            shader = Shader.Find("Sprites/Default");
         }
 
         Material material = new Material(shader);
