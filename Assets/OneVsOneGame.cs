@@ -335,6 +335,8 @@ public class OneVsOneGame : MonoBehaviour
 
         if (!onlineMode)
         {
+            player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.C, KeyCode.F, KeyCode.G, KeyCode.H);
+            player2.SetControls(KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.LeftArrow, KeyCode.RightArrow, KeyCode.Slash, KeyCode.Period, KeyCode.Comma, KeyCode.M);
             player1.SetLocalInputEnabled(true);
             player1.SetExternalInputEnabled(false);
             player2.SetLocalInputEnabled(true);
@@ -342,6 +344,8 @@ public class OneVsOneGame : MonoBehaviour
             return;
         }
 
+        player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.C, KeyCode.F, KeyCode.G, KeyCode.H);
+        player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.C, KeyCode.F, KeyCode.G, KeyCode.H);
         player1.SetLocalInputEnabled(onlineHost);
         player1.SetExternalInputEnabled(false);
         player2.SetLocalInputEnabled(!onlineHost);
@@ -918,8 +922,10 @@ public class OneVsOneGame : MonoBehaviour
 
         Camera camera = cameraObject.AddComponent<Camera>();
         camera.rect = viewport;
-        camera.fieldOfView = 58f;
-        camera.clearFlags = CameraClearFlags.Skybox;
+        camera.orthographic = true;
+        camera.orthographicSize = 9f;
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = new Color(0.09f, 0.12f, 0.14f);
 
         SplitScreenCameraFollow follow = cameraObject.AddComponent<SplitScreenCameraFollow>();
         follow.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
@@ -1099,6 +1105,18 @@ public class DuelPlayer : MonoBehaviour
     public void SetLocalInputEnabled(bool enabled)
     {
         acceptsLocalInput = enabled;
+    }
+
+    public void SetControls(KeyCode up, KeyCode down, KeyCode left, KeyCode right, KeyCode jump, KeyCode attack, KeyCode skillOne, KeyCode skillTwo)
+    {
+        upKey = up;
+        downKey = down;
+        leftKey = left;
+        rightKey = right;
+        jumpKey = jump;
+        attackKey = attack;
+        skillOneKey = skillOne;
+        skillTwoKey = skillTwo;
     }
 
     public void SetExternalInputEnabled(bool enabled)
@@ -2234,6 +2252,7 @@ public class SplitScreenCameraFollow : MonoBehaviour
     private Transform secondaryTarget;
     private Vector3 velocity;
     private float mapScale = 1f;
+    private float distanceScale = 1f;
 
     public void SetTarget(Transform followTarget)
     {
@@ -2252,6 +2271,7 @@ public class SplitScreenCameraFollow : MonoBehaviour
     public void SetMapScale(float scale)
     {
         mapScale = scale;
+        UpdateCameraSize();
     }
 
     public void SetStaticView(Vector3 position, Quaternion rotation)
@@ -2261,6 +2281,8 @@ public class SplitScreenCameraFollow : MonoBehaviour
         velocity = Vector3.zero;
         transform.position = position;
         transform.rotation = rotation;
+        distanceScale = 1f;
+        UpdateCameraSize();
     }
 
     private void LateUpdate()
@@ -2273,6 +2295,7 @@ public class SplitScreenCameraFollow : MonoBehaviour
         Vector3 desiredPosition = GetDesiredPosition();
         transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref velocity, 0.12f);
         transform.rotation = Quaternion.Euler(58f, 0f, 0f);
+        UpdateCameraSize();
     }
 
     private void SnapToTarget()
@@ -2284,12 +2307,13 @@ public class SplitScreenCameraFollow : MonoBehaviour
 
         transform.position = GetDesiredPosition();
         transform.rotation = Quaternion.Euler(58f, 0f, 0f);
+        UpdateCameraSize();
     }
 
     private Vector3 GetDesiredPosition()
     {
         Vector3 focus = target.position;
-        float distanceScale = 1f;
+        distanceScale = 1f;
 
         if (secondaryTarget != null)
         {
@@ -2299,5 +2323,14 @@ public class SplitScreenCameraFollow : MonoBehaviour
         }
 
         return focus + new Vector3(0f, 11f * mapScale * distanceScale, -8.5f * mapScale * distanceScale);
+    }
+
+    private void UpdateCameraSize()
+    {
+        Camera camera = GetComponent<Camera>();
+        if (camera != null && camera.orthographic)
+        {
+            camera.orthographicSize = 8.5f * mapScale * distanceScale;
+        }
     }
 }

@@ -268,6 +268,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         string roomText = string.IsNullOrEmpty(roomCode) ? "-" : roomCode;
         GUI.Label(new Rect(panel.x + 10f, panel.y + 8f, width - 20f, 38f), "Online: " + (connected ? "Connected" : "Connecting") + "\n" + status);
         GUI.Label(new Rect(panel.x + 10f, panel.y + 48f, 52f, 22f), "Name");
+        GUI.SetNextControlName("PlayerName");
         playerNameDraft = GUI.TextField(new Rect(panel.x + 64f, panel.y + 48f, 226f, 22f), playerNameDraft ?? "", 18);
         GUI.Label(new Rect(panel.x + 10f, panel.y + 72f, width - 20f, 20f), "Room: " + roomText);
 
@@ -275,17 +276,20 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         GUI.enabled = canUseRoomButtons;
         if (GUI.Button(new Rect(panel.x + 10f, panel.y + 96f, 132f, 26f), "Create 1v1"))
         {
+            GUI.FocusControl(null);
             CreateRoom();
         }
 
         if (GUI.Button(new Rect(panel.x + 158f, panel.y + 96f, 132f, 26f), "Join Open"))
         {
+            GUI.FocusControl(null);
             JoinOpenRoom();
         }
 
         GUI.enabled = connected && (isHost || isClient);
         if (GUI.Button(new Rect(panel.x + 10f, panel.y + 126f, 280f, 22f), "Leave Room"))
         {
+            GUI.FocusControl(null);
             LeaveRoom();
         }
 
