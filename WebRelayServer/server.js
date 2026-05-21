@@ -24,9 +24,10 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const isBuildFile = filePath.startsWith(path.join(webRoot, "Build"));
   const headers = {
     "Content-Type": getContentType(filePath),
-    "Cache-Control": filePath.endsWith("index.html") ? "no-store" : "public, max-age=31536000, immutable"
+    "Cache-Control": filePath.endsWith("index.html") || isBuildFile ? "no-store" : "public, max-age=3600"
   };
 
   if (filePath.endsWith(".br")) {

@@ -52,12 +52,14 @@
       }
 
       var buildUrl = "Build";
-      var loaderUrl = buildUrl + "/WebGLBuild.loader.js";
+      var buildVersion = "clean-scene-b445121";
+      var cacheBust = "?v=" + buildVersion;
+      var loaderUrl = buildUrl + "/WebGLBuild.loader.js" + cacheBust;
       var config = {
         arguments: [],
-        dataUrl: buildUrl + "/WebGLBuild.data.br",
-        frameworkUrl: buildUrl + "/WebGLBuild.framework.js.br",
-        codeUrl: buildUrl + "/WebGLBuild.wasm.br",
+        dataUrl: buildUrl + "/WebGLBuild.data.br" + cacheBust,
+        frameworkUrl: buildUrl + "/WebGLBuild.framework.js.br" + cacheBust,
+        codeUrl: buildUrl + "/WebGLBuild.wasm.br" + cacheBust,
         streamingAssetsUrl: "StreamingAssets",
         companyName: "DefaultCompany",
         productName: "Storage",
