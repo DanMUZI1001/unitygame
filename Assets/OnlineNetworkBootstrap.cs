@@ -16,7 +16,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     private bool initSent;
     private float nextSendTime;
     private string status = "Offline";
-    private string serverUrl = "ws://localhost:8080";
+    private string serverUrl = "auto";
     private string roomCode = "room1";
 
 #if UNITY_WEBGL && !UNITY_EDITOR

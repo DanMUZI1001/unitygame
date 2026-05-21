@@ -7,6 +7,11 @@ mergeInto(LibraryManager.library, {
       window.__unityDuelSocket.close();
     }
 
+    if (!url || url === "auto") {
+      var protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+      url = protocol + window.location.host;
+    }
+
     var socket = new WebSocket(url);
     window.__unityDuelSocket = socket;
     window.__unityDuelObjectName = objectName;

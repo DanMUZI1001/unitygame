@@ -1,10 +1,34 @@
+const fs = require("fs");
 const http = require("http");
+const path = require("path");
 const WebSocket = require("ws");
 
 const port = Number(process.env.PORT || 8080);
+const webRoot = path.resolve(process.cwd(), "WebGLBuild");
+
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("Unity Duel relay is running\n");
+  const urlPath = decodeURIComponent(req.url.split("?")[0]);
+  const relativePath = urlPath === "/" ? "index.html" : urlPath.replace(/^\/+/, "");
+  const filePath = path.resolve(webRoot, relativePath);
+
+  if (!filePath.startsWith(webRoot) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    res.writeHead(404, { "Content-Type": "text/plain" });
+    res.end("WebGLBuild file not found. Build Unity WebGL into WebGLBuild/ first.\n");
+    return;
+  }
+
+  const headers = { "Content-Type": getContentType(filePath) };
+
+  if (filePath.endsWith(".br")) {
+    headers["Content-Encoding"] = "br";
+  }
+
+  if (filePath.endsWith(".gz")) {
+    headers["Content-Encoding"] = "gzip";
+  }
+
+  res.writeHead(200, headers);
+  fs.createReadStream(filePath).pipe(res);
 });
 
 const wss = new WebSocket.Server({ server });
@@ -87,4 +111,34 @@ wss.on("connection", (socket) => {
 
 server.listen(port, () => {
   console.log(`Unity Duel relay listening on ws://localhost:${port}`);
+  console.log(`Serving WebGL files from ${webRoot}`);
 });
+
+function getContentType(filePath) {
+  const cleanPath = filePath.replace(/\.(br|gz)$/i, "");
+  const ext = path.extname(cleanPath).toLowerCase();
+
+  switch (ext) {
+    case ".html":
+      return "text/html";
+    case ".js":
+      return "application/javascript";
+    case ".wasm":
+      return "application/wasm";
+    case ".data":
+      return "application/octet-stream";
+    case ".json":
+      return "application/json";
+    case ".css":
+      return "text/css";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".ico":
+      return "image/x-icon";
+    default:
+      return "application/octet-stream";
+  }
+}

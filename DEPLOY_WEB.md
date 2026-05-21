@@ -21,18 +21,22 @@ Close the Unity Editor before using batchmode.
 
 ## 2. Deploy the WebGL Build
 
-Upload the generated `WebGLBuild` folder to a static web host such as:
+Option A, simplest: deploy this whole repository to Render.
+The included Node server serves both:
 
-- Vercel
-- Netlify
-- itch.io
-- GitHub Pages
+- the Unity WebGL files in `WebGLBuild/`
+- the WebSocket relay on the same domain
 
-The included `vercel.json` expects the WebGL output at:
+In this mode, leave the in-game server field as:
 
 ```text
-WebGLBuild/
+auto
 ```
+
+The WebGL client will connect to the current page host automatically.
+
+Option B: use separate hosts.
+Upload the generated `WebGLBuild` folder to a static web host such as Vercel, Netlify, itch.io, or GitHub Pages.
 
 ## 3. Deploy the Relay Server
 
@@ -42,18 +46,25 @@ The relay server is in:
 WebRelayServer/
 ```
 
-Run locally:
+Run locally from the repository root:
 
 ```powershell
 cd WebRelayServer
 npm install
-npm start
+cd ..
+node WebRelayServer/server.js
 ```
 
-Local game server URL:
+Local browser URL:
 
 ```text
-ws://localhost:8080
+http://localhost:8080
+```
+
+Local in-game server URL:
+
+```text
+auto
 ```
 
 For public HTTPS hosting, deploy the relay to Render, Railway, Fly.io, or another Node host.
@@ -66,7 +77,7 @@ wss://your-relay-server.example.com
 ## 4. Play Online
 
 1. Open the WebGL game link in two browsers or on two PCs.
-2. Use the same relay server URL.
+2. Use the same relay server URL. If the game and relay are on the same Render app, use `auto`.
 3. Use the same room code.
 4. One player clicks `Host P1`.
 5. The other clicks `Client P2`.

@@ -2,7 +2,6 @@ services:
   - type: web
     name: unity-duel-relay
     env: node
-    rootDir: WebRelayServer
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: cd WebRelayServer && npm install
+    startCommand: node WebRelayServer/server.js
     plan: free
