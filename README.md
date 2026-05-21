@@ -16,13 +16,21 @@ node WebRelayServer/server.js
 Open:
 
 ```text
-http://localhost:8080
+http://localhost:8084
 ```
 
 In the game, leave the server field as:
 
 ```text
 auto
+```
+
+Lobby controls:
+
+```text
+F1: Create room
+F2: Join open room
+F3: Leave room
 ```
 
 ## Deploy

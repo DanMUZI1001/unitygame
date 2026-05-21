@@ -7,6 +7,11 @@ using UnityEngine;
 
 public class OnlineNetworkBootstrap : MonoBehaviour
 {
+    private const float HostSnapshotInterval = 0.05f;
+    private const float ClientInputInterval = 0.03f;
+    private const float FirstReconnectDelay = 0.25f;
+    private const float MaxReconnectDelay = 2f;
+
     private readonly ConcurrentQueue<string> incomingMessages = new ConcurrentQueue<string>();
 
     private OneVsOneGame game;
@@ -14,10 +19,19 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     private bool isClient;
     private bool connected;
     private bool initSent;
+    private bool shouldReconnect;
+    private bool manualDisconnect;
+    private int reconnectAttempts;
+    private float reconnectAt;
     private float nextSendTime;
+    private float nextLobbySendTime;
     private string status = "Offline";
     private string serverUrl = "auto";
     private string roomCode = "room1";
+    private string playerName;
+    private DuelAbility lobbyAbility;
+
+    public static string LocalClientId { get; private set; } = "";
 
 #if UNITY_WEBGL && !UNITY_EDITOR
     [DllImport("__Internal")]
@@ -49,6 +63,13 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     {
         gameObject.name = "Online Network Bootstrap";
         DontDestroyOnLoad(gameObject);
+        playerName = "Player" + UnityEngine.Random.Range(1000, 9999);
+        lobbyAbility = (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length);
+    }
+
+    private void Start()
+    {
+        ConnectLobby();
     }
 
     private void Update()
@@ -63,9 +84,37 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             ProcessMessage(message);
         }
 
-        if (!connected || game == null)
+        if (Input.GetKeyDown(KeyCode.F1))
+        {
+            CreateRoom();
+        }
+
+        if (Input.GetKeyDown(KeyCode.F2))
+        {
+            JoinOpenRoom();
+        }
+
+        if (Input.GetKeyDown(KeyCode.F3))
+        {
+            LeaveRoom();
+        }
+
+        if (!connected)
+        {
+            TryReconnect();
+            return;
+        }
+
+        if (game == null)
         {
             return;
+        }
+
+        if (!isHost && !isClient && Time.time >= nextLobbySendTime)
+        {
+            nextLobbySendTime = Time.time + 0.25f;
+            Vector3 position = game.GetLobbyLocalPosition();
+            SendLine($"LPOS|{Format(position.x)}|{Format(position.z)}");
         }
 
         if (isHost)
@@ -78,71 +127,82 @@ public class OnlineNetworkBootstrap : MonoBehaviour
 
             if (Time.time >= nextSendTime)
             {
-                nextSendTime = Time.time + 0.05f;
+                nextSendTime = Time.time + HostSnapshotInterval;
                 SendSnapshot();
             }
         }
         else if (isClient && Time.time >= nextSendTime)
         {
-            nextSendTime = Time.time + 0.03f;
+            nextSendTime = Time.time + ClientInputInterval;
             SendInput();
-        }
-    }
-
-    private void OnGUI()
-    {
-        GUIStyle buttonStyle = new GUIStyle(GUI.skin.button)
-        {
-            fontSize = 18
-        };
-
-        GUIStyle labelStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 16,
-            normal = { textColor = Color.white }
-        };
-
-        Rect panel = new Rect(Screen.width * 0.5f - 300f, Screen.height - 154f, 600f, 140f);
-        GUI.Box(panel, "");
-        GUI.Label(new Rect(panel.x + 12f, panel.y + 8f, 560f, 22f), "Web Online: " + status, labelStyle);
-        GUI.Label(new Rect(panel.x + 12f, panel.y + 36f, 80f, 24f), "Server", labelStyle);
-        serverUrl = GUI.TextField(new Rect(panel.x + 88f, panel.y + 34f, 235f, 26f), serverUrl);
-        GUI.Label(new Rect(panel.x + 340f, panel.y + 36f, 60f, 24f), "Room", labelStyle);
-        roomCode = GUI.TextField(new Rect(panel.x + 392f, panel.y + 34f, 110f, 26f), roomCode);
-
-        if (GUI.Button(new Rect(panel.x + 12f, panel.y + 82f, 175f, 32f), "Host P1", buttonStyle))
-        {
-            StartHost();
-        }
-
-        if (GUI.Button(new Rect(panel.x + 210f, panel.y + 82f, 175f, 32f), "Client P2", buttonStyle))
-        {
-            StartClient();
-        }
-
-        if (GUI.Button(new Rect(panel.x + 408f, panel.y + 82f, 175f, 32f), "Disconnect", buttonStyle))
-        {
-            Disconnect();
         }
     }
 
     private void StartHost()
     {
-        Disconnect();
         isHost = true;
         isClient = false;
-        status = "Connecting host to " + serverUrl;
+        initSent = false;
+        status = "Room " + roomCode + " host";
+        if (game != null)
+        {
+            game.StartRound(UnityEngine.Random.Range(0, 14), lobbyAbility, (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length));
+        }
         PrepareLocalGameRole(true);
-        WS_Connect(serverUrl, gameObject.name);
     }
 
     private void StartClient()
     {
-        Disconnect();
         isHost = false;
         isClient = true;
-        status = "Connecting client to " + serverUrl;
+        initSent = false;
+        status = "Room " + roomCode + " client. Waiting for sync.";
+    }
+
+    private void ConnectLobby()
+    {
+        isHost = false;
+        isClient = false;
+        shouldReconnect = true;
+        manualDisconnect = false;
+        reconnectAttempts = 0;
+        status = "Connecting lobby to " + serverUrl;
         WS_Connect(serverUrl, gameObject.name);
+    }
+
+    private void CreateRoom()
+    {
+        if (!connected)
+        {
+            ConnectLobby();
+            return;
+        }
+
+        SendLine("CREATE");
+    }
+
+    private void JoinOpenRoom()
+    {
+        if (!connected)
+        {
+            ConnectLobby();
+            return;
+        }
+
+        SendLine("JOIN_OPEN");
+    }
+
+    private void LeaveRoom()
+    {
+        isHost = false;
+        isClient = false;
+        initSent = false;
+        SendLine("LEAVE_ROOM");
+
+        if (game != null)
+        {
+            game.ShowLobby();
+        }
     }
 
     private void PrepareLocalGameRole(bool host)
@@ -161,8 +221,14 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     public void OnWebSocketOpen(string unused)
     {
         connected = true;
-        status = isHost ? "Host connected. Waiting for P2." : "Client connected. Waiting for sync.";
-        SendLine("JOIN|" + roomCode + "|" + (isHost ? "HOST" : "CLIENT"));
+        reconnectAttempts = 0;
+        status = "Lobby connected";
+        SendLine("HELLO|" + playerName + "|" + (int)lobbyAbility);
+
+        if (isHost || isClient)
+        {
+            SendLine("JOIN|" + roomCode + "|" + (isHost ? "HOST" : "CLIENT"));
+        }
     }
 
     public void OnWebSocketMessage(string message)
@@ -173,13 +239,16 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     public void OnWebSocketClose(string reason)
     {
         connected = false;
-        status = "Disconnected";
+        initSent = false;
+        status = manualDisconnect ? "Disconnected" : "Disconnected. Reconnecting...";
+        ScheduleReconnect();
     }
 
     public void OnWebSocketError(string error)
     {
         connected = false;
         status = "WebSocket error: " + error;
+        ScheduleReconnect();
     }
 
     private void ProcessMessage(string message)
@@ -193,6 +262,11 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         if (parts[0] == "SYS")
         {
             status = parts.Length > 1 ? parts[1] : "Server message";
+            if (isHost && status.Contains("Client connected"))
+            {
+                initSent = false;
+            }
+
             return;
         }
 
@@ -208,6 +282,45 @@ public class OnlineNetworkBootstrap : MonoBehaviour
 
         switch (parts[0])
         {
+            case "ID":
+                if (parts.Length > 1)
+                {
+                    LocalClientId = parts[1];
+                }
+                break;
+            case "LOBBY":
+                if (!isHost && !isClient && game != null)
+                {
+                    game.ApplyLobbyUsers(parts.Length > 1 ? parts[1] : "");
+                    status = "Lobby connected. F1 create, F2 join";
+                }
+                break;
+            case "ROOM":
+                if (parts.Length < 3)
+                {
+                    return;
+                }
+
+                roomCode = parts[1];
+                if (parts[2] == "HOST")
+                {
+                    StartHost();
+                }
+                else
+                {
+                    StartClient();
+                }
+                break;
+            case "LOBBY_BACK":
+                isHost = false;
+                isClient = false;
+                initSent = false;
+                if (game != null)
+                {
+                    game.ShowLobby();
+                }
+                status = "Back in lobby";
+                break;
             case "INIT":
                 if (!isClient || parts.Length < 4)
                 {
@@ -299,6 +412,8 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     {
         connected = false;
         initSent = false;
+        shouldReconnect = false;
+        manualDisconnect = true;
         WS_Close();
         status = "Offline";
 
@@ -306,6 +421,30 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         {
             game.SetOnlineRole(false, false);
         }
+    }
+
+    private void TryReconnect()
+    {
+        if (!shouldReconnect || manualDisconnect || Time.unscaledTime < reconnectAt)
+        {
+            return;
+        }
+
+        reconnectAttempts++;
+        status = (isHost ? "Reconnecting host..." : "Reconnecting client...") + " attempt " + reconnectAttempts;
+        WS_Connect(serverUrl, gameObject.name);
+        ScheduleReconnect();
+    }
+
+    private void ScheduleReconnect()
+    {
+        if (!shouldReconnect || manualDisconnect)
+        {
+            return;
+        }
+
+        float delay = Mathf.Min(MaxReconnectDelay, FirstReconnectDelay * Mathf.Pow(2f, reconnectAttempts));
+        reconnectAt = Time.unscaledTime + delay;
     }
 
     private void OnDestroy()

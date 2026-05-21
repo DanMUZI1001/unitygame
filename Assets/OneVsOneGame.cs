@@ -1,5 +1,5 @@
+using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.InputSystem;
 
 public enum DuelAbility
 {
@@ -54,12 +54,15 @@ public class OneVsOneGame : MonoBehaviour
     private SplitScreenCameraFollow player1Camera;
     private SplitScreenCameraFollow player2Camera;
     private Transform mapRoot;
+    private Transform lobbyRoot;
+    private readonly Dictionary<string, GameObject> lobbyAvatars = new Dictionary<string, GameObject>();
     private float timeLeft;
     private string winnerMessage = "";
     private int currentMapIndex;
     private Vector2 currentMapSize = new Vector2(18f, 12f);
     private bool onlineMode;
     private bool onlineHost;
+    private bool lobbyMode;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateOnPlay()
@@ -79,11 +82,16 @@ public class OneVsOneGame : MonoBehaviour
         Time.fixedDeltaTime = 1f / 60f;
 
         CreateCameraAndLight();
-        StartRound();
+        ShowLobby();
     }
 
     private void Update()
     {
+        if (lobbyMode)
+        {
+            return;
+        }
+
         if (player1 == null || player2 == null)
         {
             return;
@@ -91,7 +99,7 @@ public class OneVsOneGame : MonoBehaviour
 
         if (!string.IsNullOrEmpty(winnerMessage))
         {
-            if (Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+            if (Input.GetKeyDown(KeyCode.R))
             {
                 StartRound();
             }
@@ -116,44 +124,6 @@ public class OneVsOneGame : MonoBehaviour
         }
     }
 
-    private void OnGUI()
-    {
-        if (player1 == null || player2 == null)
-        {
-            return;
-        }
-
-        GUIStyle labelStyle = new GUIStyle(GUI.skin.label)
-        {
-            fontSize = 22,
-            normal = { textColor = Color.white }
-        };
-
-        GUIStyle centerStyle = new GUIStyle(labelStyle)
-        {
-            alignment = TextAnchor.MiddleCenter
-        };
-
-        GUI.Label(new Rect(20f, 16f, 420f, 100f), player1.GetHudText("P1", "C", "G", "H"), labelStyle);
-        GUI.Label(new Rect(Screen.width - 440f, 16f, 420f, 100f), player2.GetHudText("P2", "/", ",", "M"), labelStyle);
-        GUI.Label(new Rect(0f, 16f, Screen.width, 40f), FormatTime(timeLeft), centerStyle);
-        GUI.Label(new Rect(0f, 48f, Screen.width, 40f), "Map: " + mapNames[currentMapIndex], centerStyle);
-
-        if (string.IsNullOrEmpty(winnerMessage))
-        {
-            return;
-        }
-
-        GUIStyle winStyle = new GUIStyle(centerStyle)
-        {
-            fontSize = 42,
-            normal = { textColor = Color.yellow }
-        };
-
-        GUI.Label(new Rect(0f, Screen.height * 0.35f, Screen.width, 80f), winnerMessage, winStyle);
-        GUI.Label(new Rect(0f, Screen.height * 0.48f, Screen.width, 50f), "Press R to Restart", centerStyle);
-    }
-
     private void StartRound()
     {
         StartRound(Random.Range(0, mapNames.Length), GetRandomAbility(), GetRandomAbility());
@@ -163,7 +133,9 @@ public class OneVsOneGame : MonoBehaviour
     {
         winnerMessage = "";
         timeLeft = MatchTime;
+        lobbyMode = false;
 
+        ClearLobby();
         ClearOldRound();
         currentMapIndex = Mathf.Clamp(mapIndex, 0, mapNames.Length - 1);
         BuildMap(currentMapIndex);
@@ -172,34 +144,113 @@ public class OneVsOneGame : MonoBehaviour
             "Player 1",
             GetPlayerSpawnPosition(1),
             Color.blue,
-            Key.W,
-            Key.S,
-            Key.A,
-            Key.D,
-            Key.C,
-            Key.F,
-            Key.G,
-            Key.H,
+            KeyCode.W,
+            KeyCode.S,
+            KeyCode.A,
+            KeyCode.D,
+            KeyCode.C,
+            KeyCode.F,
+            KeyCode.G,
+            KeyCode.H,
             p1Ability);
 
         player2 = CreatePlayer(
             "Player 2",
             GetPlayerSpawnPosition(2),
             Color.red,
-            Key.UpArrow,
-            Key.DownArrow,
-            Key.LeftArrow,
-            Key.RightArrow,
-            Key.Slash,
-            Key.Period,
-            Key.Comma,
-            Key.M,
+            KeyCode.UpArrow,
+            KeyCode.DownArrow,
+            KeyCode.LeftArrow,
+            KeyCode.RightArrow,
+            KeyCode.Slash,
+            KeyCode.Period,
+            KeyCode.Comma,
+            KeyCode.M,
             p2Ability);
 
         player1.SetOpponent(player2);
         player2.SetOpponent(player1);
         ConfigurePlayerInputForCurrentMode();
         AssignSplitScreenTargets();
+    }
+
+    public void ShowLobby()
+    {
+        lobbyMode = true;
+        onlineMode = false;
+        winnerMessage = "";
+        ClearOldRound();
+        ClearLobby();
+
+        mapRoot = new GameObject("Lobby Map").transform;
+        lobbyRoot = new GameObject("Lobby Avatars").transform;
+        currentMapSize = new Vector2(24f, 16f);
+        CreateBlock("Lobby Floor", Vector3.zero, new Vector3(24f, 0.25f, 16f), new Color(0.22f, 0.33f, 0.32f), true);
+        CreateBlock("Lobby Center", new Vector3(0f, 0.15f, 0f), new Vector3(4f, 0.35f, 4f), new Color(0.32f, 0.42f, 0.38f), true);
+        CreateLobbyText("LobbyText", "LOBBY\nF1 Create Room\nF2 Join Open Room\nF3 Leave Room", new Vector3(0f, 0.35f, 6.1f), 0.38f);
+        SetupLobbyCameras();
+    }
+
+    public Vector3 GetLobbyLocalPosition()
+    {
+        string localId = OnlineNetworkBootstrap.LocalClientId;
+        if (!string.IsNullOrEmpty(localId) && lobbyAvatars.TryGetValue(localId, out GameObject avatar))
+        {
+            return avatar.transform.position;
+        }
+
+        return new Vector3(0f, 1f, -4f);
+    }
+
+    public void ApplyLobbyUsers(string payload)
+    {
+        if (!lobbyMode)
+        {
+            ShowLobby();
+        }
+
+        HashSet<string> seen = new HashSet<string>();
+        if (!string.IsNullOrEmpty(payload))
+        {
+            string[] users = payload.Split(';');
+            for (int i = 0; i < users.Length; i++)
+            {
+                if (string.IsNullOrEmpty(users[i]))
+                {
+                    continue;
+                }
+
+                string[] fields = users[i].Split(',');
+                if (fields.Length < 6)
+                {
+                    continue;
+                }
+
+                string id = fields[0];
+                string displayName = fields[1].Replace("%20", " ");
+                DuelAbility ability = (DuelAbility)Mathf.Clamp(ParseLobbyInt(fields[2]), 0, System.Enum.GetValues(typeof(DuelAbility)).Length - 1);
+                Vector3 position = new Vector3(ParseLobbyFloat(fields[3]), 1f, ParseLobbyFloat(fields[4]));
+                string room = fields[5];
+
+                seen.Add(id);
+                UpdateLobbyAvatar(id, displayName, ability, position, room);
+            }
+        }
+
+        List<string> removeIds = new List<string>();
+        foreach (string id in lobbyAvatars.Keys)
+        {
+            if (!seen.Contains(id))
+            {
+                removeIds.Add(id);
+            }
+        }
+
+        for (int i = 0; i < removeIds.Count; i++)
+        {
+            Destroy(lobbyAvatars[removeIds[i]]);
+            lobbyAvatars.Remove(removeIds[i]);
+        }
     }
 
     public void SetOnlineRole(bool isOnline, bool isHost)
@@ -358,22 +409,18 @@ public class OneVsOneGame : MonoBehaviour
         }
     }
 
-    private DuelPlayer CreatePlayer(string playerName, Vector3 position, Color color, Key up, Key down, Key left, Key right, Key jump, Key attack, Key skillOne, Key skillTwo, DuelAbility ability)
+    private DuelPlayer CreatePlayer(string playerName, Vector3 position, Color color, KeyCode up, KeyCode down, KeyCode left, KeyCode right, KeyCode jump, KeyCode attack, KeyCode skillOne, KeyCode skillTwo, DuelAbility ability)
     {
         GameObject playerObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
         playerObject.name = playerName;
         playerObject.transform.position = position;
-        playerObject.GetComponent<Renderer>().material = CreateMaterial(color);
-
-        Destroy(playerObject.GetComponent<Collider>());
-
-        CharacterController controller = playerObject.AddComponent<CharacterController>();
-        controller.height = 2f;
-        controller.radius = 0.45f;
-        controller.skinWidth = 0.06f;
+        Renderer capsuleRenderer = playerObject.GetComponent<Renderer>();
+        capsuleRenderer.material = CreateMaterial(color);
+        capsuleRenderer.enabled = false;
 
         DuelPlayer player = playerObject.AddComponent<DuelPlayer>();
         player.Setup(playerName, up, down, left, right, jump, attack, skillOne, skillTwo, ability);
+        AttachCharacterModel(player, color, ability, playerName == "Player 2");
 
         GameObject attackVisual = new GameObject("Attack Visual");
         attackVisual.transform.SetParent(playerObject.transform);
@@ -384,6 +431,152 @@ public class OneVsOneGame : MonoBehaviour
 
         CreateNameTag(playerObject.transform, playerName);
         return player;
+    }
+
+    private void AttachCharacterModel(DuelPlayer player, Color fallbackColor, DuelAbility ability, bool useAlternateSide)
+    {
+        string prefabName = GetCharacterPrefabName(ability, useAlternateSide);
+        Transform visual = CreateCharacterVisual(player.transform, prefabName, fallbackColor);
+        player.SetCharacterVisual(visual);
+    }
+
+    private Transform CreateCharacterVisual(Transform parent, string prefabName, Color fallbackColor)
+    {
+        GameObject prefab = Resources.Load<GameObject>("QuarterViewCharacters/" + prefabName);
+
+        if (prefab == null)
+        {
+            return CreateVisualCube("Fallback Character", parent, new Vector3(0f, 0.05f, 0f), new Vector3(0.9f, 1.65f, 0.9f), fallbackColor).transform;
+        }
+
+        GameObject model = Instantiate(prefab, parent);
+        model.name = "Character Model - " + prefabName;
+        model.transform.localPosition = Vector3.zero;
+        model.transform.localRotation = Quaternion.identity;
+        model.transform.localScale = Vector3.one * 0.92f;
+
+        foreach (Renderer renderer in model.GetComponentsInChildren<Renderer>())
+        {
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            renderer.receiveShadows = true;
+        }
+
+        if (model.GetComponentsInChildren<Renderer>().Length == 0)
+        {
+            Destroy(model);
+            return CreateVisualCube("Fallback Character", parent, new Vector3(0f, 0.05f, 0f), new Vector3(0.9f, 1.65f, 0.9f), fallbackColor).transform;
+        }
+
+        return model.transform;
+    }
+
+    private string GetCharacterPrefabName(DuelAbility ability, bool useAlternateSide)
+    {
+        switch (ability)
+        {
+            case DuelAbility.FireMage:
+            case DuelAbility.Thunder:
+                return useAlternateSide ? "Enemy B" : "Luna";
+            case DuelAbility.IceMage:
+            case DuelAbility.Wind:
+                return useAlternateSide ? "Enemy C" : "Ludo";
+            case DuelAbility.Stone:
+                return useAlternateSide ? "Enemy D" : "Enemy A";
+            case DuelAbility.Shadow:
+            case DuelAbility.Poison:
+                return useAlternateSide ? "Enemy A" : "Enemy D";
+            case DuelAbility.Magnet:
+                return useAlternateSide ? "Ludo" : "Enemy C";
+            case DuelAbility.DashMaster:
+            case DuelAbility.Healer:
+            default:
+                return useAlternateSide ? "Luna" : "Player";
+        }
+    }
+
+    private void UpdateLobbyAvatar(string id, string displayName, DuelAbility ability, Vector3 position, string room)
+    {
+        bool created = false;
+        if (!lobbyAvatars.TryGetValue(id, out GameObject avatar))
+        {
+            avatar = new GameObject("Lobby Avatar " + id);
+            avatar.transform.SetParent(lobbyRoot != null ? lobbyRoot : mapRoot);
+            avatar.transform.position = position;
+            CreateCharacterVisual(avatar.transform, GetCharacterPrefabName(ability, false), Color.Lerp(Color.cyan, Color.white, 0.35f));
+            CreateLobbyText("Name", displayName, new Vector3(0f, 2.2f, 0f), 0.18f).transform.SetParent(avatar.transform, false);
+            lobbyAvatars[id] = avatar;
+            created = true;
+        }
+
+        if (!created)
+        {
+            avatar.transform.position = Vector3.Lerp(avatar.transform.position, position, 16f * Time.deltaTime);
+        }
+        TextMesh label = avatar.GetComponentInChildren<TextMesh>();
+        if (label != null)
+        {
+            label.text = string.IsNullOrEmpty(room) ? displayName : displayName + "\nRoom " + room;
+        }
+    }
+
+    private GameObject CreateLobbyText(string objectName, string text, Vector3 position, float size)
+    {
+        GameObject textObject = new GameObject(objectName);
+        textObject.transform.SetParent(lobbyRoot != null ? lobbyRoot : mapRoot);
+        textObject.transform.position = position;
+        textObject.transform.rotation = Quaternion.Euler(65f, 0f, 0f);
+
+        TextMesh textMesh = textObject.AddComponent<TextMesh>();
+        textMesh.text = text;
+        textMesh.characterSize = size;
+        textMesh.anchor = TextAnchor.MiddleCenter;
+        textMesh.alignment = TextAlignment.Center;
+        textMesh.color = Color.white;
+        return textObject;
+    }
+
+    private void SetupLobbyCameras()
+    {
+        if (player1Camera != null)
+        {
+            player1Camera.GetComponent<Camera>().enabled = true;
+            Camera camera = player1Camera.GetComponent<Camera>();
+            camera.rect = new Rect(0f, 0f, 1f, 1f);
+            player1Camera.SetStaticView(new Vector3(0f, 13f, -10f), Quaternion.Euler(58f, 0f, 0f));
+        }
+
+        if (player2Camera != null)
+        {
+            player2Camera.GetComponent<Camera>().enabled = false;
+        }
+    }
+
+    private void ClearLobby()
+    {
+        foreach (GameObject avatar in lobbyAvatars.Values)
+        {
+            Destroy(avatar);
+        }
+
+        lobbyAvatars.Clear();
+
+        if (lobbyRoot != null)
+        {
+            Destroy(lobbyRoot.gameObject);
+            lobbyRoot = null;
+        }
+    }
+
+    private float ParseLobbyFloat(string value)
+    {
+        float parsed;
+        return float.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out parsed) ? parsed : 0f;
+    }
+
+    private int ParseLobbyInt(string value)
+    {
+        int parsed;
+        return int.TryParse(value, out parsed) ? parsed : 0;
     }
 
     private void BuildMap(int mapIndex)
@@ -617,11 +810,6 @@ public class OneVsOneGame : MonoBehaviour
         block.transform.localScale = scale;
         block.GetComponent<Renderer>().material = CreateMaterial(color);
 
-        if (!hasCollider)
-        {
-            Destroy(block.GetComponent<Collider>());
-        }
-
         return block;
     }
 
@@ -633,7 +821,6 @@ public class OneVsOneGame : MonoBehaviour
         visual.transform.localPosition = localPosition;
         visual.transform.localScale = localScale;
         visual.GetComponent<Renderer>().material = CreateMaterial(color);
-        Destroy(visual.GetComponent<Collider>());
         return visual;
     }
 
@@ -663,7 +850,6 @@ public class OneVsOneGame : MonoBehaviour
         if (mainCamera)
         {
             cameraObject.tag = "MainCamera";
-            cameraObject.AddComponent<AudioListener>();
         }
 
         Camera camera = cameraObject.AddComponent<Camera>();
@@ -680,12 +866,16 @@ public class OneVsOneGame : MonoBehaviour
     {
         if (player1Camera != null)
         {
+            player1Camera.GetComponent<Camera>().enabled = true;
+            player1Camera.GetComponent<Camera>().rect = new Rect(0f, 0f, 0.5f, 1f);
             player1Camera.SetTarget(player1.transform);
             player1Camera.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
         }
 
         if (player2Camera != null)
         {
+            player2Camera.GetComponent<Camera>().enabled = true;
+            player2Camera.GetComponent<Camera>().rect = new Rect(0.5f, 0f, 0.5f, 1f);
             player2Camera.SetTarget(player2.transform);
             player2Camera.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
         }
@@ -737,18 +927,20 @@ public class DuelPlayer : MonoBehaviour
     [SerializeField] private float attackRange = 1.65f;
     [SerializeField] private float attackCooldown = 0.8f;
 
-    private CharacterController controller;
     private DuelPlayer opponent;
     private GameObject attackVisual;
+    private Transform characterVisual;
+    private Vector3 characterVisualBaseScale = Vector3.one;
+    private float characterVisualAttackEndTime;
     private DuelAbility ability;
-    private Key upKey;
-    private Key downKey;
-    private Key leftKey;
-    private Key rightKey;
-    private Key jumpKey;
-    private Key attackKey;
-    private Key skillOneKey;
-    private Key skillTwoKey;
+    private KeyCode upKey;
+    private KeyCode downKey;
+    private KeyCode leftKey;
+    private KeyCode rightKey;
+    private KeyCode jumpKey;
+    private KeyCode attackKey;
+    private KeyCode skillOneKey;
+    private KeyCode skillTwoKey;
     private Vector3 smoothedInput;
     private Vector3 inputSmoothVelocity;
     private Vector3 moveVelocity;
@@ -772,7 +964,7 @@ public class DuelPlayer : MonoBehaviour
     public int Health { get; private set; }
     public DuelAbility Ability => ability;
 
-    public void Setup(string playerName, Key up, Key down, Key left, Key right, Key jump, Key attack, Key skillOne, Key skillTwo, DuelAbility selectedAbility)
+    public void Setup(string playerName, KeyCode up, KeyCode down, KeyCode left, KeyCode right, KeyCode jump, KeyCode attack, KeyCode skillOne, KeyCode skillTwo, DuelAbility selectedAbility)
     {
         name = playerName;
         upKey = up;
@@ -797,6 +989,15 @@ public class DuelPlayer : MonoBehaviour
         attackVisual = visual;
     }
 
+    public void SetCharacterVisual(Transform visual)
+    {
+        characterVisual = visual;
+        if (characterVisual != null)
+        {
+            characterVisualBaseScale = characterVisual.localScale;
+        }
+    }
+
     public void SetLocalInputEnabled(bool enabled)
     {
         acceptsLocalInput = enabled;
@@ -816,35 +1017,30 @@ public class DuelPlayer : MonoBehaviour
     {
         DuelInputState input = new DuelInputState();
 
-        if (Keyboard.current == null)
-        {
-            return input;
-        }
-
-        if (Keyboard.current[upKey].isPressed)
+        if (Input.GetKey(upKey))
         {
             input.MoveZ += 1f;
         }
 
-        if (Keyboard.current[downKey].isPressed)
+        if (Input.GetKey(downKey))
         {
             input.MoveZ -= 1f;
         }
 
-        if (Keyboard.current[leftKey].isPressed)
+        if (Input.GetKey(leftKey))
         {
             input.MoveX -= 1f;
         }
 
-        if (Keyboard.current[rightKey].isPressed)
+        if (Input.GetKey(rightKey))
         {
             input.MoveX += 1f;
         }
 
-        input.Jump = Keyboard.current[jumpKey].wasPressedThisFrame;
-        input.Attack = Keyboard.current[attackKey].wasPressedThisFrame;
-        input.SkillOne = Keyboard.current[skillOneKey].wasPressedThisFrame;
-        input.SkillTwo = Keyboard.current[skillTwoKey].wasPressedThisFrame;
+        input.Jump = Input.GetKeyDown(jumpKey);
+        input.Attack = Input.GetKeyDown(attackKey);
+        input.SkillOne = Input.GetKeyDown(skillOneKey);
+        input.SkillTwo = Input.GetKeyDown(skillTwoKey);
         return input;
     }
 
@@ -905,13 +1101,12 @@ public class DuelPlayer : MonoBehaviour
 
     private void Awake()
     {
-        controller = GetComponent<CharacterController>();
         Health = maxHealth;
     }
 
     private void Update()
     {
-        if (Keyboard.current == null || Health <= 0)
+        if (Health <= 0)
         {
             return;
         }
@@ -990,23 +1185,33 @@ public class DuelPlayer : MonoBehaviour
         moveVelocity = Vector3.MoveTowards(moveVelocity, targetVelocity, acceleration * Time.deltaTime);
         pushVelocity = Vector3.MoveTowards(pushVelocity, Vector3.zero, 10f * Time.deltaTime);
 
-        if (controller.isGrounded && verticalVelocity < 0f)
+        bool grounded = transform.position.y <= 1.01f;
+
+        if (grounded && verticalVelocity < 0f)
         {
             verticalVelocity = -1f;
         }
 
-        if (controller.isGrounded && activeInput.Jump && Time.time >= stunEndTime)
+        if (grounded && activeInput.Jump && Time.time >= stunEndTime)
         {
             verticalVelocity = jumpForce;
         }
         else
         {
-            verticalVelocity += Physics.gravity.y * Time.deltaTime;
+            verticalVelocity += -20f * Time.deltaTime;
         }
 
         Vector3 frameMovement = (moveVelocity + pushVelocity) * Time.deltaTime;
         frameMovement.y = verticalVelocity * Time.deltaTime;
-        controller.Move(frameMovement);
+        transform.position += frameMovement;
+
+        if (transform.position.y < 1f && verticalVelocity <= 0f)
+        {
+            Vector3 groundedPosition = transform.position;
+            groundedPosition.y = 1f;
+            transform.position = groundedPosition;
+            verticalVelocity = -1f;
+        }
 
         Vector3 lookVelocity = moveVelocity + pushVelocity;
         if (lookVelocity.sqrMagnitude > 0.04f)
@@ -1014,6 +1219,34 @@ public class DuelPlayer : MonoBehaviour
             Quaternion targetRotation = Quaternion.LookRotation(lookVelocity.normalized, Vector3.up);
             transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationDegreesPerSecond * Time.deltaTime);
         }
+
+        AnimateCharacterVisual(lookVelocity);
+    }
+
+    private void AnimateCharacterVisual(Vector3 lookVelocity)
+    {
+        if (characterVisual == null)
+        {
+            return;
+        }
+
+        float moveAmount = Mathf.Clamp01(lookVelocity.magnitude / moveSpeed);
+        float bob = Mathf.Sin(Time.time * 13f) * 0.045f * moveAmount;
+        float lean = Mathf.Sin(Time.time * 13f) * 4f * moveAmount;
+
+        if (Time.time < characterVisualAttackEndTime)
+        {
+            float attackT = Mathf.InverseLerp(characterVisualAttackEndTime - 0.18f, characterVisualAttackEndTime, Time.time);
+            float punch = Mathf.Sin(attackT * Mathf.PI);
+            characterVisual.localPosition = new Vector3(0f, 0.05f + bob, 0.08f * punch);
+            characterVisual.localRotation = Quaternion.Euler(0f, 0f, lean) * Quaternion.Euler(-10f * punch, 0f, 0f);
+            characterVisual.localScale = characterVisualBaseScale * (1f + 0.05f * punch);
+            return;
+        }
+
+        characterVisual.localPosition = new Vector3(0f, 0.05f + bob, 0f);
+        characterVisual.localRotation = Quaternion.Euler(0f, 0f, lean);
+        characterVisual.localScale = Vector3.Lerp(characterVisual.localScale, characterVisualBaseScale, 14f * Time.deltaTime);
     }
 
     private void HandleActions()
@@ -1171,6 +1404,7 @@ public class DuelPlayer : MonoBehaviour
 
         nextAttackTime = Time.time + attackCooldown * cooldownMultiplier;
         pushVelocity += transform.forward * attackLunge;
+        characterVisualAttackEndTime = Time.time + visualDuration + 0.05f;
         ShowAttackVisual(hitColor, visualDuration, range, visualWidth, visualHeight);
 
         if (!IsOpponentInFront(range, hitDot))
@@ -1338,23 +1572,6 @@ public class DuelPlayer : MonoBehaviour
             return true;
         }
 
-        Vector3 start = transform.position + Vector3.up;
-        Vector3 end = opponent.transform.position + Vector3.up;
-        Vector3 direction = end - start;
-        RaycastHit[] hits = Physics.RaycastAll(start, direction.normalized, direction.magnitude);
-
-        foreach (RaycastHit hit in hits)
-        {
-            Transform hitTransform = hit.transform;
-
-            if (hitTransform == transform || hitTransform.IsChildOf(transform) || hitTransform == opponent.transform || hitTransform.IsChildOf(opponent.transform))
-            {
-                continue;
-            }
-
-            return true;
-        }
-
         return false;
     }
 
@@ -1410,7 +1627,6 @@ public class DuelPlayer : MonoBehaviour
         projectileObject.transform.position = transform.position + transform.forward * 0.9f + Vector3.up * 0.2f;
         projectileObject.transform.localScale = Vector3.one * 0.45f;
         projectileObject.GetComponent<Renderer>().material = CreateMaterial(color);
-        Destroy(projectileObject.GetComponent<Collider>());
         BuildProjectileVisual(projectileObject.transform, color);
 
         DuelProjectile projectile = projectileObject.AddComponent<DuelProjectile>();
@@ -1575,7 +1791,6 @@ public class DuelPlayer : MonoBehaviour
         shape.transform.localRotation = localRotation;
         shape.transform.localScale = localScale;
         shape.GetComponent<Renderer>().material = CreateMaterial(color);
-        Destroy(shape.GetComponent<Collider>());
     }
 
     private void SpawnEffect(Color color, float size)
@@ -1694,7 +1909,6 @@ public class DuelPlayer : MonoBehaviour
         shape.transform.localScale = localScale;
         shape.transform.localRotation = localRotation;
         shape.GetComponent<Renderer>().material = CreateMaterial(color);
-        Destroy(shape.GetComponent<Collider>());
     }
 
     private void SpawnHitEffect(Vector3 position, Color color)
@@ -1740,7 +1954,6 @@ public class DuelPlayer : MonoBehaviour
         shape.transform.localScale = localScale;
         shape.transform.localRotation = localRotation;
         shape.GetComponent<Renderer>().material = CreateMaterial(color);
-        Destroy(shape.GetComponent<Collider>());
     }
 
     private Material CreateMaterial(Color color)
@@ -1932,6 +2145,14 @@ public class SplitScreenCameraFollow : MonoBehaviour
     public void SetMapScale(float scale)
     {
         mapScale = scale;
+    }
+
+    public void SetStaticView(Vector3 position, Quaternion rotation)
+    {
+        target = null;
+        velocity = Vector3.zero;
+        transform.position = position;
+        transform.rotation = rotation;
     }
 
     private void LateUpdate()

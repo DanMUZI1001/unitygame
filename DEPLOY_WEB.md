@@ -58,7 +58,15 @@ node WebRelayServer/server.js
 Local browser URL:
 
 ```text
-http://localhost:8080
+http://localhost:8084
+```
+
+Lobby controls:
+
+```text
+F1: Create room
+F2: Join open room
+F3: Leave room
 ```
 
 Local in-game server URL:
