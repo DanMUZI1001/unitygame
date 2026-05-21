@@ -282,6 +282,7 @@ public class OneVsOneGame : MonoBehaviour
         onlineMode = isOnline;
         onlineHost = isHost;
         ConfigurePlayerInputForCurrentMode();
+        AssignSingleCameraTargets();
     }
 
     public void SetMatchRunning(bool running)
@@ -448,7 +449,7 @@ public class OneVsOneGame : MonoBehaviour
         playerObject.name = playerName;
         playerObject.transform.position = position;
         Renderer capsuleRenderer = playerObject.GetComponent<Renderer>();
-        capsuleRenderer.material = CreateMaterial(color);
+        ApplyVisibleColor(capsuleRenderer, color);
         capsuleRenderer.enabled = true;
 
         DuelPlayer player = playerObject.AddComponent<DuelPlayer>();
@@ -475,7 +476,7 @@ public class OneVsOneGame : MonoBehaviour
         body.transform.localPosition = new Vector3(0f, 0.05f, 0f);
         body.transform.localRotation = Quaternion.identity;
         body.transform.localScale = new Vector3(0.82f, 0.88f, 0.82f);
-        body.GetComponent<Renderer>().material = CreateMaterial(Color.Lerp(color, Color.white, 0.18f));
+        ApplyVisibleColor(body.GetComponent<Renderer>(), Color.Lerp(color, Color.white, 0.18f));
         Collider bodyCollider = body.GetComponent<Collider>();
         if (bodyCollider != null)
         {
@@ -488,7 +489,7 @@ public class OneVsOneGame : MonoBehaviour
         head.transform.localPosition = new Vector3(0f, 1.08f, 0f);
         head.transform.localRotation = Quaternion.identity;
         head.transform.localScale = Vector3.one * 0.42f;
-        head.GetComponent<Renderer>().material = CreateMaterial(Color.Lerp(color, Color.white, 0.45f));
+        ApplyVisibleColor(head.GetComponent<Renderer>(), Color.Lerp(color, Color.white, 0.45f));
         Collider headCollider = head.GetComponent<Collider>();
         if (headCollider != null)
         {
@@ -522,6 +523,7 @@ public class OneVsOneGame : MonoBehaviour
         {
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             renderer.receiveShadows = true;
+            ApplyVisibleColor(renderer, fallbackColor);
         }
 
         if (model.GetComponentsInChildren<Renderer>().Length == 0)
@@ -872,7 +874,7 @@ public class OneVsOneGame : MonoBehaviour
         block.transform.SetParent(mapRoot);
         block.transform.position = position;
         block.transform.localScale = scale;
-        block.GetComponent<Renderer>().material = CreateMaterial(color);
+        ApplyVisibleColor(block.GetComponent<Renderer>(), color);
 
         return block;
     }
@@ -884,7 +886,7 @@ public class OneVsOneGame : MonoBehaviour
         visual.transform.SetParent(parent);
         visual.transform.localPosition = localPosition;
         visual.transform.localScale = localScale;
-        visual.GetComponent<Renderer>().material = CreateMaterial(color);
+        ApplyVisibleColor(visual.GetComponent<Renderer>(), color);
         return visual;
     }
 
@@ -936,6 +938,11 @@ public class OneVsOneGame : MonoBehaviour
 
     private void AssignSingleCameraTargets()
     {
+        if (player1 == null || player2 == null)
+        {
+            return;
+        }
+
         if (player1Camera != null)
         {
             player1Camera.GetComponent<Camera>().enabled = true;
@@ -1028,6 +1035,21 @@ public class OneVsOneGame : MonoBehaviour
         }
 
         return material;
+    }
+
+    private void ApplyVisibleColor(Renderer renderer, Color color)
+    {
+        if (renderer == null)
+        {
+            return;
+        }
+
+        renderer.enabled = true;
+        MaterialPropertyBlock block = new MaterialPropertyBlock();
+        renderer.GetPropertyBlock(block);
+        block.SetColor("_BaseColor", color);
+        block.SetColor("_Color", color);
+        renderer.SetPropertyBlock(block);
     }
 
     private string FormatTime(float seconds)
