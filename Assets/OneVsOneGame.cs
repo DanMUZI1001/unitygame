@@ -63,6 +63,7 @@ public class OneVsOneGame : MonoBehaviour
     private bool onlineMode;
     private bool onlineHost;
     private bool lobbyMode;
+    private bool matchRunning;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateOnPlay()
@@ -107,6 +108,11 @@ public class OneVsOneGame : MonoBehaviour
             return;
         }
 
+        if (!matchRunning)
+        {
+            return;
+        }
+
         timeLeft = Mathf.Max(0f, timeLeft - Time.deltaTime);
         CheckFallDeaths();
 
@@ -134,6 +140,7 @@ public class OneVsOneGame : MonoBehaviour
         winnerMessage = "";
         timeLeft = MatchTime;
         lobbyMode = false;
+        matchRunning = true;
 
         ClearLobby();
         ClearOldRound();
@@ -178,6 +185,7 @@ public class OneVsOneGame : MonoBehaviour
     {
         lobbyMode = true;
         onlineMode = false;
+        matchRunning = false;
         winnerMessage = "";
         ClearOldRound();
         ClearLobby();
@@ -253,11 +261,27 @@ public class OneVsOneGame : MonoBehaviour
         }
     }
 
+    public void ShowLocalLobbyAvatar(string displayName, DuelAbility ability, string room)
+    {
+        if (!lobbyMode)
+        {
+            ShowLobby();
+        }
+
+        string id = string.IsNullOrEmpty(OnlineNetworkBootstrap.LocalClientId) ? "local-preview" : OnlineNetworkBootstrap.LocalClientId;
+        UpdateLobbyAvatar(id, displayName, ability, new Vector3(0f, 1f, -4f), room);
+    }
+
     public void SetOnlineRole(bool isOnline, bool isHost)
     {
         onlineMode = isOnline;
         onlineHost = isHost;
         ConfigurePlayerInputForCurrentMode();
+    }
+
+    public void SetMatchRunning(bool running)
+    {
+        matchRunning = running;
     }
 
     public int CurrentMapIndex => currentMapIndex;
@@ -420,6 +444,7 @@ public class OneVsOneGame : MonoBehaviour
 
         DuelPlayer player = playerObject.AddComponent<DuelPlayer>();
         player.Setup(playerName, up, down, left, right, jump, attack, skillOne, skillTwo, ability);
+        CreateAlwaysVisibleBody(playerObject.transform, color);
         AttachCharacterModel(player, color, ability, playerName == "Player 2");
 
         GameObject attackVisual = new GameObject("Attack Visual");
@@ -431,6 +456,35 @@ public class OneVsOneGame : MonoBehaviour
 
         CreateNameTag(playerObject.transform, playerName);
         return player;
+    }
+
+    private void CreateAlwaysVisibleBody(Transform parent, Color color)
+    {
+        GameObject body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        body.name = "Always Visible Player Body";
+        body.transform.SetParent(parent);
+        body.transform.localPosition = new Vector3(0f, 0.05f, 0f);
+        body.transform.localRotation = Quaternion.identity;
+        body.transform.localScale = new Vector3(0.82f, 0.88f, 0.82f);
+        body.GetComponent<Renderer>().material = CreateMaterial(Color.Lerp(color, Color.white, 0.18f));
+        Collider bodyCollider = body.GetComponent<Collider>();
+        if (bodyCollider != null)
+        {
+            Destroy(bodyCollider);
+        }
+
+        GameObject head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        head.name = "Always Visible Player Head";
+        head.transform.SetParent(parent);
+        head.transform.localPosition = new Vector3(0f, 1.08f, 0f);
+        head.transform.localRotation = Quaternion.identity;
+        head.transform.localScale = Vector3.one * 0.42f;
+        head.GetComponent<Renderer>().material = CreateMaterial(Color.Lerp(color, Color.white, 0.45f));
+        Collider headCollider = head.GetComponent<Collider>();
+        if (headCollider != null)
+        {
+            Destroy(headCollider);
+        }
     }
 
     private void AttachCharacterModel(DuelPlayer player, Color fallbackColor, DuelAbility ability, bool useAlternateSide)
@@ -901,7 +955,7 @@ public class OneVsOneGame : MonoBehaviour
         float rightPanelY = Screen.width < 760 ? 132f : 16f;
         DrawPanel(new Rect(16f, 16f, 360f, 110f), player1.GetHudText("P1", "C", "G", "H"));
         DrawPanel(new Rect(rightPanelX, rightPanelY, 360f, 110f), player2.GetHudText("P2", "/", ",", "M"));
-        DrawPanel(new Rect(Mathf.Max(16f, (Screen.width - 180f) * 0.5f), Screen.width < 760 ? 250f : 16f, 180f, 48f), FormatTime(timeLeft));
+        DrawPanel(new Rect(Mathf.Max(16f, (Screen.width - 180f) * 0.5f), Screen.width < 760 ? 250f : 16f, 180f, 48f), matchRunning ? FormatTime(timeLeft) : "Waiting");
 
         if (!string.IsNullOrEmpty(winnerMessage))
         {

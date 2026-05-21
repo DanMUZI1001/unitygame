@@ -19,6 +19,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     private bool isClient;
     private bool connected;
     private bool initSent;
+    private bool hostMatchStarted;
     private bool shouldReconnect;
     private bool manualDisconnect;
     private int reconnectAttempts;
@@ -119,6 +120,11 @@ public class OnlineNetworkBootstrap : MonoBehaviour
 
         if (isHost)
         {
+            if (!hostMatchStarted)
+            {
+                return;
+            }
+
             if (!initSent && game.Player1 != null && game.Player2 != null)
             {
                 SendLine($"INIT|{game.CurrentMapIndex}|{(int)game.Player1.Ability}|{(int)game.Player2.Ability}");
@@ -143,12 +149,13 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         isHost = true;
         isClient = false;
         initSent = false;
-        status = "Room " + roomCode + " host";
+        hostMatchStarted = false;
+        status = "Room " + roomCode + " host. Waiting for Player 2.";
         if (game != null)
         {
-            game.StartRound(UnityEngine.Random.Range(0, 14), lobbyAbility, (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length));
+            game.ShowLobby();
+            game.ShowLocalLobbyAvatar(playerName, lobbyAbility, roomCode);
         }
-        PrepareLocalGameRole(true);
     }
 
     private void StartClient()
@@ -156,7 +163,38 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         isHost = false;
         isClient = true;
         initSent = false;
+        hostMatchStarted = false;
         status = "Room " + roomCode + " client. Waiting for sync.";
+        if (game != null)
+        {
+            game.ShowLobby();
+            game.ShowLocalLobbyAvatar(playerName, lobbyAbility, roomCode);
+        }
+    }
+
+    private void StartHostMatch()
+    {
+        if (!isHost || hostMatchStarted)
+        {
+            return;
+        }
+
+        if (game == null)
+        {
+            game = FindAnyObjectByType<OneVsOneGame>();
+        }
+
+        if (game == null)
+        {
+            return;
+        }
+
+        hostMatchStarted = true;
+        initSent = false;
+        status = "Room " + roomCode + " match started";
+        game.StartRound(UnityEngine.Random.Range(0, 14), lobbyAbility, (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length));
+        game.SetMatchRunning(true);
+        PrepareLocalGameRole(true);
     }
 
     private void ConnectLobby()
@@ -197,6 +235,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         isHost = false;
         isClient = false;
         initSent = false;
+        hostMatchStarted = false;
         SendLine("LEAVE_ROOM");
 
         if (game != null)
@@ -305,7 +344,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             status = parts.Length > 1 ? parts[1] : "Server message";
             if (isHost && status.Contains("Client connected"))
             {
-                initSent = false;
+                StartHostMatch();
             }
 
             return;
@@ -356,6 +395,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
                 isHost = false;
                 isClient = false;
                 initSent = false;
+                hostMatchStarted = false;
                 if (game != null)
                 {
                     game.ShowLobby();
@@ -373,6 +413,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
                 DuelAbility p2Ability = (DuelAbility)ParseInt(parts[3]);
                 game.StartRound(mapIndex, p1Ability, p2Ability);
                 game.SetOnlineRole(true, false);
+                game.SetMatchRunning(true);
                 status = "Synced as Player 2";
                 break;
             case "IN":
@@ -453,6 +494,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     {
         connected = false;
         initSent = false;
+        hostMatchStarted = false;
         shouldReconnect = false;
         manualDisconnect = true;
         WS_Close();
