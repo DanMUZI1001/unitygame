@@ -901,17 +901,28 @@ public class OneVsOneGame : MonoBehaviour
         player2Camera = CreateSplitCamera("Unused Secondary Camera", new Rect(0f, 0f, 1f, 1f), false);
         player2Camera.GetComponent<Camera>().enabled = false;
 
-        RenderSettings.ambientLight = new Color(0.48f, 0.52f, 0.56f);
+        RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+        RenderSettings.ambientLight = new Color(0.9f, 0.92f, 0.95f);
         RenderSettings.fog = false;
 
-        if (FindAnyObjectByType<Light>() == null)
+        foreach (Light existingLight in FindObjectsByType<Light>())
         {
-            GameObject lightObject = new GameObject("Directional Light");
-            Light light = lightObject.AddComponent<Light>();
-            light.type = LightType.Directional;
-            light.intensity = 1.2f;
-            lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+            Destroy(existingLight.gameObject);
         }
+
+        GameObject sunObject = new GameObject("Duel Sun Light");
+        Light sun = sunObject.AddComponent<Light>();
+        sun.type = LightType.Directional;
+        sun.intensity = 2.4f;
+        sun.color = Color.white;
+        sunObject.transform.rotation = Quaternion.Euler(55f, -35f, 0f);
+
+        GameObject fillObject = new GameObject("Duel Fill Light");
+        Light fill = fillObject.AddComponent<Light>();
+        fill.type = LightType.Directional;
+        fill.intensity = 1.2f;
+        fill.color = new Color(0.72f, 0.82f, 1f);
+        fillObject.transform.rotation = Quaternion.Euler(35f, 145f, 0f);
     }
 
     private SplitScreenCameraFollow CreateSplitCamera(string cameraName, Rect viewport, bool mainCamera)
@@ -925,9 +936,10 @@ public class OneVsOneGame : MonoBehaviour
         Camera camera = cameraObject.AddComponent<Camera>();
         camera.rect = viewport;
         camera.orthographic = false;
-        camera.fieldOfView = 62f;
+        camera.fieldOfView = 70f;
         camera.nearClipPlane = 0.05f;
         camera.farClipPlane = 300f;
+        camera.cullingMask = ~0;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.16f, 0.2f, 0.24f);
 
@@ -1324,6 +1336,11 @@ public class DuelPlayer : MonoBehaviour
             rawInput.Normalize();
         }
 
+        if (acceptsLocalInput && rawInput.sqrMagnitude > 0.001f)
+        {
+            rawInput = GetCameraRelativeMove(rawInput);
+        }
+
         smoothedInput = Vector3.SmoothDamp(smoothedInput, rawInput, ref inputSmoothVelocity, inputSmoothTime);
 
         float speedMultiplier = 1f;
@@ -1377,6 +1394,34 @@ public class DuelPlayer : MonoBehaviour
         }
 
         AnimateCharacterVisual(lookVelocity);
+    }
+
+    private Vector3 GetCameraRelativeMove(Vector3 input)
+    {
+        Camera camera = Camera.main;
+        if (camera == null)
+        {
+            return input;
+        }
+
+        Vector3 forward = camera.transform.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.001f)
+        {
+            forward = Vector3.forward;
+        }
+        forward.Normalize();
+
+        Vector3 right = camera.transform.right;
+        right.y = 0f;
+        if (right.sqrMagnitude < 0.001f)
+        {
+            right = Vector3.right;
+        }
+        right.Normalize();
+
+        Vector3 move = right * input.x + forward * input.z;
+        return move.sqrMagnitude > 1f ? move.normalized : move;
     }
 
     private void AnimateCharacterVisual(Vector3 lookVelocity)
@@ -2402,7 +2447,7 @@ public class SplitScreenCameraFollow : MonoBehaviour
         }
 
         forward.Normalize();
-        return target.position - forward * 6.4f * mapScale + Vector3.up * 4.1f * mapScale;
+        return target.position - forward * 7.6f * mapScale + Vector3.up * 3.25f * mapScale;
     }
 
     private Quaternion GetThirdPersonRotation()
@@ -2414,7 +2459,7 @@ public class SplitScreenCameraFollow : MonoBehaviour
             forward = Vector3.forward;
         }
 
-        Vector3 lookPoint = target.position + Vector3.up * 1.25f + forward.normalized * 2.2f;
+        Vector3 lookPoint = target.position + Vector3.up * 0.85f + forward.normalized * 1.55f;
         Vector3 direction = lookPoint - transform.position;
         if (direction.sqrMagnitude < 0.01f)
         {
