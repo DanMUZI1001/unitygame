@@ -924,8 +924,10 @@ public class OneVsOneGame : MonoBehaviour
         camera.rect = viewport;
         camera.orthographic = false;
         camera.fieldOfView = 62f;
+        camera.nearClipPlane = 0.05f;
+        camera.farClipPlane = 300f;
         camera.clearFlags = CameraClearFlags.SolidColor;
-        camera.backgroundColor = new Color(0.09f, 0.12f, 0.14f);
+        camera.backgroundColor = new Color(0.16f, 0.2f, 0.24f);
 
         SplitScreenCameraFollow follow = cameraObject.AddComponent<SplitScreenCameraFollow>();
         follow.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
@@ -1002,7 +1004,12 @@ public class OneVsOneGame : MonoBehaviour
 
     private Material CreateMaterial(Color color)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Unlit/Color");
+        }
+
         if (shader == null)
         {
             shader = Shader.Find("Standard");
@@ -1010,6 +1017,16 @@ public class OneVsOneGame : MonoBehaviour
 
         Material material = new Material(shader);
         material.color = color;
+        if (material.HasProperty("_BaseColor"))
+        {
+            material.SetColor("_BaseColor", color);
+        }
+
+        if (material.HasProperty("_Color"))
+        {
+            material.SetColor("_Color", color);
+        }
+
         return material;
     }
 
@@ -2075,7 +2092,12 @@ public class DuelPlayer : MonoBehaviour
 
     private Material CreateMaterial(Color color)
     {
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+        Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
+        if (shader == null)
+        {
+            shader = Shader.Find("Unlit/Color");
+        }
+
         if (shader == null)
         {
             shader = Shader.Find("Standard");
@@ -2083,6 +2105,16 @@ public class DuelPlayer : MonoBehaviour
 
         Material material = new Material(shader);
         material.color = color;
+        if (material.HasProperty("_BaseColor"))
+        {
+            material.SetColor("_BaseColor", color);
+        }
+
+        if (material.HasProperty("_Color"))
+        {
+            material.SetColor("_Color", color);
+        }
+
         return material;
     }
 
