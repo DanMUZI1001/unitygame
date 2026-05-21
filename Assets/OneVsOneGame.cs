@@ -922,8 +922,8 @@ public class OneVsOneGame : MonoBehaviour
 
         Camera camera = cameraObject.AddComponent<Camera>();
         camera.rect = viewport;
-        camera.orthographic = true;
-        camera.orthographicSize = 9f;
+        camera.orthographic = false;
+        camera.fieldOfView = 62f;
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.09f, 0.12f, 0.14f);
 
@@ -938,7 +938,8 @@ public class OneVsOneGame : MonoBehaviour
         {
             player1Camera.GetComponent<Camera>().enabled = true;
             player1Camera.GetComponent<Camera>().rect = new Rect(0f, 0f, 1f, 1f);
-            player1Camera.SetTargets(player1.transform, player2.transform);
+            Transform localTarget = onlineMode && !onlineHost ? player2.transform : player1.transform;
+            player1Camera.SetThirdPersonTarget(localTarget);
             player1Camera.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
         }
 
@@ -2253,11 +2254,13 @@ public class SplitScreenCameraFollow : MonoBehaviour
     private Vector3 velocity;
     private float mapScale = 1f;
     private float distanceScale = 1f;
+    private bool thirdPersonMode;
 
     public void SetTarget(Transform followTarget)
     {
         target = followTarget;
         secondaryTarget = null;
+        thirdPersonMode = false;
         SnapToTarget();
     }
 
@@ -2265,6 +2268,15 @@ public class SplitScreenCameraFollow : MonoBehaviour
     {
         target = firstTarget;
         secondaryTarget = secondTarget;
+        thirdPersonMode = false;
+        SnapToTarget();
+    }
+
+    public void SetThirdPersonTarget(Transform followTarget)
+    {
+        target = followTarget;
+        secondaryTarget = null;
+        thirdPersonMode = true;
         SnapToTarget();
     }
 
@@ -2278,6 +2290,7 @@ public class SplitScreenCameraFollow : MonoBehaviour
     {
         target = null;
         secondaryTarget = null;
+        thirdPersonMode = false;
         velocity = Vector3.zero;
         transform.position = position;
         transform.rotation = rotation;
@@ -2292,9 +2305,9 @@ public class SplitScreenCameraFollow : MonoBehaviour
             return;
         }
 
-        Vector3 desiredPosition = GetDesiredPosition();
+        Vector3 desiredPosition = thirdPersonMode ? GetThirdPersonPosition() : GetDesiredPosition();
         transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref velocity, 0.12f);
-        transform.rotation = Quaternion.Euler(58f, 0f, 0f);
+        transform.rotation = thirdPersonMode ? GetThirdPersonRotation() : Quaternion.Euler(58f, 0f, 0f);
         UpdateCameraSize();
     }
 
@@ -2305,8 +2318,8 @@ public class SplitScreenCameraFollow : MonoBehaviour
             return;
         }
 
-        transform.position = GetDesiredPosition();
-        transform.rotation = Quaternion.Euler(58f, 0f, 0f);
+        transform.position = thirdPersonMode ? GetThirdPersonPosition() : GetDesiredPosition();
+        transform.rotation = thirdPersonMode ? GetThirdPersonRotation() : Quaternion.Euler(58f, 0f, 0f);
         UpdateCameraSize();
     }
 
@@ -2323,6 +2336,38 @@ public class SplitScreenCameraFollow : MonoBehaviour
         }
 
         return focus + new Vector3(0f, 11f * mapScale * distanceScale, -8.5f * mapScale * distanceScale);
+    }
+
+    private Vector3 GetThirdPersonPosition()
+    {
+        Vector3 forward = target.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.01f)
+        {
+            forward = Vector3.forward;
+        }
+
+        forward.Normalize();
+        return target.position - forward * 6.4f * mapScale + Vector3.up * 4.1f * mapScale;
+    }
+
+    private Quaternion GetThirdPersonRotation()
+    {
+        Vector3 forward = target.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.01f)
+        {
+            forward = Vector3.forward;
+        }
+
+        Vector3 lookPoint = target.position + Vector3.up * 1.25f + forward.normalized * 2.2f;
+        Vector3 direction = lookPoint - transform.position;
+        if (direction.sqrMagnitude < 0.01f)
+        {
+            direction = forward;
+        }
+
+        return Quaternion.LookRotation(direction.normalized, Vector3.up);
     }
 
     private void UpdateCameraSize()
