@@ -56,6 +56,19 @@ function send(socket, message) {
   }
 }
 
+function decodeName(value, fallback) {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    const decoded = Buffer.from(value, "base64").toString("utf8").trim();
+    return decoded || fallback;
+  } catch {
+    return value;
+  }
+}
+
 function getRoom(code) {
   if (!rooms.has(code)) {
     rooms.set(code, { host: null, client: null, lastInit: null, lastSnapshot: null });
@@ -145,7 +158,8 @@ function enterRoom(socket, roomCode, role) {
     send(socket, "ROOM|" + roomCode + "|HOST");
 
     if (room.client) {
-      send(socket, "SYS|Client connected");
+      const clientInfo = clients.get(room.client.clientId);
+      send(socket, "SYS|Client connected|" + Buffer.from(clientInfo?.name || "Player 2", "utf8").toString("base64") + "|" + (clientInfo?.ability || 0));
     }
   } else {
     if (!room.host) {
@@ -162,7 +176,8 @@ function enterRoom(socket, roomCode, role) {
 
     room.client = socket;
     send(socket, "ROOM|" + roomCode + "|CLIENT");
-    send(room.host, "SYS|Client connected");
+    const clientInfo = clients.get(socket.clientId);
+    send(room.host, "SYS|Client connected|" + Buffer.from(clientInfo?.name || "Player 2", "utf8").toString("base64") + "|" + (clientInfo?.ability || 0));
 
     if (room.lastInit) {
       send(socket, room.lastInit);
@@ -206,7 +221,7 @@ wss.on("connection", (socket) => {
     if (parts[0] === "HELLO") {
       const client = clients.get(socket.clientId);
       if (client) {
-        client.name = parts[1] || client.name;
+        client.name = decodeName(parts[1], client.name);
         client.ability = Number(parts[2] || 0);
       }
 

@@ -137,6 +137,11 @@ public class OneVsOneGame : MonoBehaviour
 
     public void StartRound(int mapIndex, DuelAbility p1Ability, DuelAbility p2Ability)
     {
+        StartRound(mapIndex, p1Ability, p2Ability, "Player 1", "Player 2");
+    }
+
+    public void StartRound(int mapIndex, DuelAbility p1Ability, DuelAbility p2Ability, string player1Name, string player2Name)
+    {
         winnerMessage = "";
         timeLeft = MatchTime;
         lobbyMode = false;
@@ -148,7 +153,7 @@ public class OneVsOneGame : MonoBehaviour
         BuildMap(currentMapIndex);
 
         player1 = CreatePlayer(
-            "Player 1",
+            string.IsNullOrWhiteSpace(player1Name) ? "Player 1" : player1Name,
             GetPlayerSpawnPosition(1),
             Color.blue,
             KeyCode.W,
@@ -162,7 +167,7 @@ public class OneVsOneGame : MonoBehaviour
             p1Ability);
 
         player2 = CreatePlayer(
-            "Player 2",
+            string.IsNullOrWhiteSpace(player2Name) ? "Player 2" : player2Name,
             GetPlayerSpawnPosition(2),
             Color.red,
             KeyCode.UpArrow,
@@ -235,7 +240,7 @@ public class OneVsOneGame : MonoBehaviour
                 }
 
                 string id = fields[0];
-                string displayName = fields[1].Replace("%20", " ");
+                string displayName = System.Uri.UnescapeDataString(fields[1]);
                 DuelAbility ability = (DuelAbility)Mathf.Clamp(ParseLobbyInt(fields[2]), 0, System.Enum.GetValues(typeof(DuelAbility)).Length - 1);
                 Vector3 position = new Vector3(ParseLobbyFloat(fields[3]), 1f, ParseLobbyFloat(fields[4]));
                 string room = fields[5];
@@ -556,6 +561,7 @@ public class OneVsOneGame : MonoBehaviour
             avatar = new GameObject("Lobby Avatar " + id);
             avatar.transform.SetParent(lobbyRoot != null ? lobbyRoot : mapRoot);
             avatar.transform.position = position;
+            CreateAlwaysVisibleBody(avatar.transform, Color.Lerp(Color.cyan, Color.white, 0.35f));
             CreateCharacterVisual(avatar.transform, GetCharacterPrefabName(ability, false), Color.Lerp(Color.cyan, Color.white, 0.35f));
             CreateLobbyText("Name", displayName, new Vector3(0f, 2.2f, 0f), 0.18f).transform.SetParent(avatar.transform, false);
             lobbyAvatars[id] = avatar;

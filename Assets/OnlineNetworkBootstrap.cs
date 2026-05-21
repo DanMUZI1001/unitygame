@@ -30,7 +30,10 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     private string serverUrl = "auto";
     private string roomCode = "room1";
     private string playerName;
+    private string playerNameDraft;
+    private string opponentName = "Player 2";
     private DuelAbility lobbyAbility;
+    private DuelAbility opponentAbility;
 
     public static string LocalClientId { get; private set; } = "";
 
@@ -65,7 +68,9 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         gameObject.name = "Online Network Bootstrap";
         DontDestroyOnLoad(gameObject);
         playerName = "Player" + UnityEngine.Random.Range(1000, 9999);
+        playerNameDraft = playerName;
         lobbyAbility = (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length);
+        opponentAbility = (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length);
     }
 
     private void Start()
@@ -127,7 +132,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
 
             if (!initSent && game.Player1 != null && game.Player2 != null)
             {
-                SendLine($"INIT|{game.CurrentMapIndex}|{(int)game.Player1.Ability}|{(int)game.Player2.Ability}");
+                SendLine($"INIT|{game.CurrentMapIndex}|{(int)game.Player1.Ability}|{(int)game.Player2.Ability}|{EncodeText(playerName)}|{EncodeText(opponentName)}");
                 initSent = true;
             }
 
@@ -150,6 +155,8 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         isClient = false;
         initSent = false;
         hostMatchStarted = false;
+        opponentName = "Player 2";
+        opponentAbility = (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length);
         status = "Room " + roomCode + " host. Waiting for Player 2.";
         if (game != null)
         {
@@ -172,7 +179,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         }
     }
 
-    private void StartHostMatch()
+    private void StartHostMatch(string joinedPlayerName, DuelAbility joinedAbility)
     {
         if (!isHost || hostMatchStarted)
         {
@@ -191,8 +198,10 @@ public class OnlineNetworkBootstrap : MonoBehaviour
 
         hostMatchStarted = true;
         initSent = false;
+        opponentName = string.IsNullOrWhiteSpace(joinedPlayerName) ? "Player 2" : joinedPlayerName;
+        opponentAbility = joinedAbility;
         status = "Room " + roomCode + " match started";
-        game.StartRound(UnityEngine.Random.Range(0, 14), lobbyAbility, (DuelAbility)UnityEngine.Random.Range(0, System.Enum.GetValues(typeof(DuelAbility)).Length));
+        game.StartRound(UnityEngine.Random.Range(0, 14), lobbyAbility, opponentAbility, playerName, opponentName);
         game.SetMatchRunning(true);
         PrepareLocalGameRole(true);
     }
@@ -216,6 +225,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             return;
         }
 
+        ApplyDraftName();
         SendLine("CREATE");
     }
 
@@ -227,6 +237,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             return;
         }
 
+        ApplyDraftName();
         SendLine("JOIN_OPEN");
     }
 
@@ -247,7 +258,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     private void OnGUI()
     {
         const float width = 300f;
-        Rect panel = new Rect(16f, Mathf.Max(16f, Screen.height - 154f), width, 138f);
+        Rect panel = new Rect(16f, Mathf.Max(16f, Screen.height - 174f), width, 158f);
         Color oldColor = GUI.color;
 
         GUI.color = new Color(0f, 0f, 0f, 0.72f);
@@ -255,23 +266,25 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         GUI.color = Color.white;
 
         string roomText = string.IsNullOrEmpty(roomCode) ? "-" : roomCode;
-        GUI.Label(new Rect(panel.x + 10f, panel.y + 8f, width - 20f, 42f), "Online: " + (connected ? "Connected" : "Connecting") + "\n" + status);
-        GUI.Label(new Rect(panel.x + 10f, panel.y + 50f, width - 20f, 22f), "Room: " + roomText);
+        GUI.Label(new Rect(panel.x + 10f, panel.y + 8f, width - 20f, 38f), "Online: " + (connected ? "Connected" : "Connecting") + "\n" + status);
+        GUI.Label(new Rect(panel.x + 10f, panel.y + 48f, 52f, 22f), "Name");
+        playerNameDraft = GUI.TextField(new Rect(panel.x + 64f, panel.y + 48f, 226f, 22f), playerNameDraft ?? "", 18);
+        GUI.Label(new Rect(panel.x + 10f, panel.y + 72f, width - 20f, 20f), "Room: " + roomText);
 
         bool canUseRoomButtons = connected && !isHost && !isClient;
         GUI.enabled = canUseRoomButtons;
-        if (GUI.Button(new Rect(panel.x + 10f, panel.y + 78f, 132f, 26f), "Create 1v1"))
+        if (GUI.Button(new Rect(panel.x + 10f, panel.y + 96f, 132f, 26f), "Create 1v1"))
         {
             CreateRoom();
         }
 
-        if (GUI.Button(new Rect(panel.x + 158f, panel.y + 78f, 132f, 26f), "Join Open"))
+        if (GUI.Button(new Rect(panel.x + 158f, panel.y + 96f, 132f, 26f), "Join Open"))
         {
             JoinOpenRoom();
         }
 
         GUI.enabled = connected && (isHost || isClient);
-        if (GUI.Button(new Rect(panel.x + 10f, panel.y + 110f, 280f, 22f), "Leave Room"))
+        if (GUI.Button(new Rect(panel.x + 10f, panel.y + 126f, 280f, 22f), "Leave Room"))
         {
             LeaveRoom();
         }
@@ -303,7 +316,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         connected = true;
         reconnectAttempts = 0;
         status = "Lobby connected";
-        SendLine("HELLO|" + playerName + "|" + (int)lobbyAbility);
+        SendLine("HELLO|" + EncodeText(playerName) + "|" + (int)lobbyAbility);
 
         if (isHost || isClient)
         {
@@ -344,7 +357,9 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             status = parts.Length > 1 ? parts[1] : "Server message";
             if (isHost && status.Contains("Client connected"))
             {
-                StartHostMatch();
+                string joinedName = parts.Length > 2 ? DecodeText(parts[2]) : "Player 2";
+                DuelAbility joinedAbility = parts.Length > 3 ? (DuelAbility)Mathf.Clamp(ParseIntSafe(parts[3]), 0, System.Enum.GetValues(typeof(DuelAbility)).Length - 1) : opponentAbility;
+                StartHostMatch(joinedName, joinedAbility);
             }
 
             return;
@@ -411,7 +426,9 @@ public class OnlineNetworkBootstrap : MonoBehaviour
                 int mapIndex = ParseInt(parts[1]);
                 DuelAbility p1Ability = (DuelAbility)ParseInt(parts[2]);
                 DuelAbility p2Ability = (DuelAbility)ParseInt(parts[3]);
-                game.StartRound(mapIndex, p1Ability, p2Ability);
+                string p1Name = parts.Length > 4 ? DecodeText(parts[4]) : "Player 1";
+                string p2Name = parts.Length > 5 ? DecodeText(parts[5]) : playerName;
+                game.StartRound(mapIndex, p1Ability, p2Ability, p1Name, p2Name);
                 game.SetOnlineRole(true, false);
                 game.SetMatchRunning(true);
                 status = "Synced as Player 2";
@@ -490,6 +507,48 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         WS_Send(line);
     }
 
+    private void ApplyDraftName()
+    {
+        string cleaned = CleanName(playerNameDraft);
+        playerName = string.IsNullOrEmpty(cleaned) ? "Player" + UnityEngine.Random.Range(1000, 9999) : cleaned;
+        playerNameDraft = playerName;
+        if (connected)
+        {
+            SendLine("HELLO|" + EncodeText(playerName) + "|" + (int)lobbyAbility);
+        }
+    }
+
+    private string CleanName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        string cleaned = value.Trim();
+        cleaned = cleaned.Replace("|", "");
+        cleaned = cleaned.Replace(";", "");
+        cleaned = cleaned.Replace(",", "");
+        return cleaned.Length > 18 ? cleaned.Substring(0, 18) : cleaned;
+    }
+
+    private string EncodeText(string value)
+    {
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(value ?? ""));
+    }
+
+    private string DecodeText(string value)
+    {
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(value ?? ""));
+        }
+        catch
+        {
+            return value ?? "";
+        }
+    }
+
     private void Disconnect()
     {
         connected = false;
@@ -548,6 +607,12 @@ public class OnlineNetworkBootstrap : MonoBehaviour
     private int ParseInt(string value)
     {
         return int.Parse(value, CultureInfo.InvariantCulture);
+    }
+
+    private int ParseIntSafe(string value)
+    {
+        int parsed;
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed) ? parsed : 0;
     }
 
     private string Bool(bool value)
