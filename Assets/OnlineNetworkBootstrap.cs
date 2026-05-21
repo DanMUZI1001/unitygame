@@ -205,6 +205,47 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         }
     }
 
+    private void OnGUI()
+    {
+        const float width = 300f;
+        Rect panel = new Rect(16f, Mathf.Max(16f, Screen.height - 154f), width, 138f);
+        Color oldColor = GUI.color;
+
+        GUI.color = new Color(0f, 0f, 0f, 0.72f);
+        GUI.Box(panel, GUIContent.none);
+        GUI.color = Color.white;
+
+        string roomText = string.IsNullOrEmpty(roomCode) ? "-" : roomCode;
+        GUI.Label(new Rect(panel.x + 10f, panel.y + 8f, width - 20f, 42f), "Online: " + (connected ? "Connected" : "Connecting") + "\n" + status);
+        GUI.Label(new Rect(panel.x + 10f, panel.y + 50f, width - 20f, 22f), "Room: " + roomText);
+
+        bool canUseRoomButtons = connected && !isHost && !isClient;
+        GUI.enabled = canUseRoomButtons;
+        if (GUI.Button(new Rect(panel.x + 10f, panel.y + 78f, 132f, 26f), "Create 1v1"))
+        {
+            CreateRoom();
+        }
+
+        if (GUI.Button(new Rect(panel.x + 158f, panel.y + 78f, 132f, 26f), "Join Open"))
+        {
+            JoinOpenRoom();
+        }
+
+        GUI.enabled = connected && (isHost || isClient);
+        if (GUI.Button(new Rect(panel.x + 10f, panel.y + 110f, 280f, 22f), "Leave Room"))
+        {
+            LeaveRoom();
+        }
+
+        GUI.enabled = true;
+        GUI.color = oldColor;
+    }
+
+    public string Status => status;
+    public string RoomCode => roomCode;
+    public bool IsOnlineConnected => connected;
+    public bool IsInRoom => isHost || isClient;
+
     private void PrepareLocalGameRole(bool host)
     {
         if (game == null)

@@ -28,9 +28,17 @@ auto
 Lobby controls:
 
 ```text
-F1: Create room
-F2: Join open room
-F3: Leave room
+Create 1v1 button or F1: Create room
+Join Open button or F2: Join open room
+Leave Room button or F3: Leave room
+```
+
+The game uses the Node WebSocket relay, so two browser tabs or two PCs that open the same URL can meet in the online lobby and enter a 1v1 room.
+
+Match camera:
+
+```text
+Single shared camera, no split screen
 ```
 
 ## Deploy

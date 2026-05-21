@@ -171,7 +171,7 @@ public class OneVsOneGame : MonoBehaviour
         player1.SetOpponent(player2);
         player2.SetOpponent(player1);
         ConfigurePlayerInputForCurrentMode();
-        AssignSplitScreenTargets();
+        AssignSingleCameraTargets();
     }
 
     public void ShowLobby()
@@ -187,7 +187,7 @@ public class OneVsOneGame : MonoBehaviour
         currentMapSize = new Vector2(24f, 16f);
         CreateBlock("Lobby Floor", Vector3.zero, new Vector3(24f, 0.25f, 16f), new Color(0.22f, 0.33f, 0.32f), true);
         CreateBlock("Lobby Center", new Vector3(0f, 0.15f, 0f), new Vector3(4f, 0.35f, 4f), new Color(0.32f, 0.42f, 0.38f), true);
-        CreateLobbyText("LobbyText", "LOBBY\nF1 Create Room\nF2 Join Open Room\nF3 Leave Room", new Vector3(0f, 0.35f, 6.1f), 0.38f);
+        CreateLobbyText("LobbyText", "ONLINE LOBBY\nF1 Create Room\nF2 Join Open Room\nF3 Leave Room", new Vector3(0f, 0.35f, 6.1f), 0.38f);
         SetupLobbyCameras();
     }
 
@@ -416,7 +416,7 @@ public class OneVsOneGame : MonoBehaviour
         playerObject.transform.position = position;
         Renderer capsuleRenderer = playerObject.GetComponent<Renderer>();
         capsuleRenderer.material = CreateMaterial(color);
-        capsuleRenderer.enabled = false;
+        capsuleRenderer.enabled = true;
 
         DuelPlayer player = playerObject.AddComponent<DuelPlayer>();
         player.Setup(playerName, up, down, left, right, jump, attack, skillOne, skillTwo, ability);
@@ -831,8 +831,12 @@ public class OneVsOneGame : MonoBehaviour
             Destroy(camera.gameObject);
         }
 
-        player1Camera = CreateSplitCamera("Player 1 Camera", new Rect(0f, 0f, 0.5f, 1f), true);
-        player2Camera = CreateSplitCamera("Player 2 Camera", new Rect(0.5f, 0f, 0.5f, 1f), false);
+        player1Camera = CreateSplitCamera("Duel Camera", new Rect(0f, 0f, 1f, 1f), true);
+        player2Camera = CreateSplitCamera("Unused Secondary Camera", new Rect(0f, 0f, 1f, 1f), false);
+        player2Camera.GetComponent<Camera>().enabled = false;
+
+        RenderSettings.ambientLight = new Color(0.48f, 0.52f, 0.56f);
+        RenderSettings.fog = false;
 
         if (FindAnyObjectByType<Light>() == null)
         {
@@ -862,23 +866,57 @@ public class OneVsOneGame : MonoBehaviour
         return follow;
     }
 
-    private void AssignSplitScreenTargets()
+    private void AssignSingleCameraTargets()
     {
         if (player1Camera != null)
         {
             player1Camera.GetComponent<Camera>().enabled = true;
-            player1Camera.GetComponent<Camera>().rect = new Rect(0f, 0f, 0.5f, 1f);
-            player1Camera.SetTarget(player1.transform);
+            player1Camera.GetComponent<Camera>().rect = new Rect(0f, 0f, 1f, 1f);
+            player1Camera.SetTargets(player1.transform, player2.transform);
             player1Camera.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
         }
 
         if (player2Camera != null)
         {
-            player2Camera.GetComponent<Camera>().enabled = true;
-            player2Camera.GetComponent<Camera>().rect = new Rect(0.5f, 0f, 0.5f, 1f);
-            player2Camera.SetTarget(player2.transform);
-            player2Camera.SetMapScale(currentMapIndex >= 12 ? 1.25f : 1f);
+            player2Camera.GetComponent<Camera>().enabled = false;
         }
+    }
+
+    private void OnGUI()
+    {
+        GUI.color = Color.white;
+
+        if (lobbyMode)
+        {
+            DrawPanel(new Rect(16f, 16f, 330f, 132f), "Online Lobby\nF1: Create 1v1 Room\nF2: Join Open Room\nF3: Leave Room\nPlayers here are real relay clients.");
+            return;
+        }
+
+        if (player1 == null || player2 == null)
+        {
+            return;
+        }
+
+        float rightPanelX = Mathf.Max(16f, Screen.width - 376f);
+        float rightPanelY = Screen.width < 760 ? 132f : 16f;
+        DrawPanel(new Rect(16f, 16f, 360f, 110f), player1.GetHudText("P1", "C", "G", "H"));
+        DrawPanel(new Rect(rightPanelX, rightPanelY, 360f, 110f), player2.GetHudText("P2", "/", ",", "M"));
+        DrawPanel(new Rect(Mathf.Max(16f, (Screen.width - 180f) * 0.5f), Screen.width < 760 ? 250f : 16f, 180f, 48f), FormatTime(timeLeft));
+
+        if (!string.IsNullOrEmpty(winnerMessage))
+        {
+            DrawPanel(new Rect((Screen.width - 360f) * 0.5f, (Screen.height - 96f) * 0.5f, 360f, 96f), winnerMessage + "\nR: Rematch");
+        }
+    }
+
+    private void DrawPanel(Rect rect, string text)
+    {
+        Color oldColor = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, 0.72f);
+        GUI.Box(rect, GUIContent.none);
+        GUI.color = Color.white;
+        GUI.Label(new Rect(rect.x + 10f, rect.y + 8f, rect.width - 20f, rect.height - 16f), text);
+        GUI.color = oldColor;
     }
 
     private void CreateNameTag(Transform parent, string text)
@@ -2133,12 +2171,21 @@ public class AttackVisualMotion : MonoBehaviour
 public class SplitScreenCameraFollow : MonoBehaviour
 {
     private Transform target;
+    private Transform secondaryTarget;
     private Vector3 velocity;
     private float mapScale = 1f;
 
     public void SetTarget(Transform followTarget)
     {
         target = followTarget;
+        secondaryTarget = null;
+        SnapToTarget();
+    }
+
+    public void SetTargets(Transform firstTarget, Transform secondTarget)
+    {
+        target = firstTarget;
+        secondaryTarget = secondTarget;
         SnapToTarget();
     }
 
@@ -2150,6 +2197,7 @@ public class SplitScreenCameraFollow : MonoBehaviour
     public void SetStaticView(Vector3 position, Quaternion rotation)
     {
         target = null;
+        secondaryTarget = null;
         velocity = Vector3.zero;
         transform.position = position;
         transform.rotation = rotation;
@@ -2180,6 +2228,16 @@ public class SplitScreenCameraFollow : MonoBehaviour
 
     private Vector3 GetDesiredPosition()
     {
-        return target.position + new Vector3(0f, 11f * mapScale, -8.5f * mapScale);
+        Vector3 focus = target.position;
+        float distanceScale = 1f;
+
+        if (secondaryTarget != null)
+        {
+            focus = (target.position + secondaryTarget.position) * 0.5f;
+            float distance = Vector3.Distance(target.position, secondaryTarget.position);
+            distanceScale = Mathf.Clamp(distance / 8f, 1f, 1.75f);
+        }
+
+        return focus + new Vector3(0f, 11f * mapScale * distanceScale, -8.5f * mapScale * distanceScale);
     }
 }

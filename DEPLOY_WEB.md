@@ -64,9 +64,9 @@ http://localhost:8084
 Lobby controls:
 
 ```text
-F1: Create room
-F2: Join open room
-F3: Leave room
+Create 1v1 button or F1: Create room
+Join Open button or F2: Join open room
+Leave Room button or F3: Leave room
 ```
 
 Local in-game server URL:
@@ -86,6 +86,6 @@ wss://your-relay-server.example.com
 
 1. Open the WebGL game link in two browsers or on two PCs.
 2. Use the same relay server URL. If the game and relay are on the same Render app, use `auto`.
-3. Use the same room code.
-4. One player clicks `Host P1`.
-5. The other clicks `Client P2`.
+3. One player clicks `Create 1v1` or presses `F1`.
+4. The other player clicks `Join Open` or presses `F2`.
+5. The match uses one shared camera, not split screen.
