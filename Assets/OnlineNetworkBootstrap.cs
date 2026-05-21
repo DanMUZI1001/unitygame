@@ -359,7 +359,8 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             {
                 string joinedName = parts.Length > 2 ? DecodeText(parts[2]) : "Player 2";
                 DuelAbility joinedAbility = parts.Length > 3 ? (DuelAbility)Mathf.Clamp(ParseIntSafe(parts[3]), 0, System.Enum.GetValues(typeof(DuelAbility)).Length - 1) : opponentAbility;
-                StartHostMatch(joinedName, joinedAbility);
+                opponentName = joinedName;
+                opponentAbility = joinedAbility;
             }
 
             return;
@@ -423,15 +424,17 @@ public class OnlineNetworkBootstrap : MonoBehaviour
                     return;
                 }
 
-                int mapIndex = ParseInt(parts[1]);
-                DuelAbility p1Ability = (DuelAbility)ParseInt(parts[2]);
-                DuelAbility p2Ability = (DuelAbility)ParseInt(parts[3]);
-                string p1Name = parts.Length > 4 ? DecodeText(parts[4]) : "Player 1";
-                string p2Name = parts.Length > 5 ? DecodeText(parts[5]) : playerName;
-                game.StartRound(mapIndex, p1Ability, p2Ability, p1Name, p2Name);
-                game.SetOnlineRole(true, false);
-                game.SetMatchRunning(true);
+                StartSyncedMatch(parts, false);
                 status = "Synced as Player 2";
+                break;
+            case "MATCH":
+                if (parts.Length < 4)
+                {
+                    return;
+                }
+
+                StartSyncedMatch(parts, isHost);
+                status = isHost ? "Match started as Player 1" : "Match started as Player 2";
                 break;
             case "IN":
                 if (!isHost || parts.Length < 7)
@@ -495,6 +498,33 @@ public class OnlineNetworkBootstrap : MonoBehaviour
             $"{Format(p1.position.x)}|{Format(p1.position.y)}|{Format(p1.position.z)}|{Format(p1.eulerAngles.y)}|{game.Player1.Health}|" +
             $"{Format(p2.position.x)}|{Format(p2.position.y)}|{Format(p2.position.z)}|{Format(p2.eulerAngles.y)}|{game.Player2.Health}|" +
             $"{Format(game.TimeLeft)}|{winner}");
+    }
+
+    private void StartSyncedMatch(string[] parts, bool hostRole)
+    {
+        if (game == null)
+        {
+            game = FindAnyObjectByType<OneVsOneGame>();
+        }
+
+        if (game == null || parts.Length < 4)
+        {
+            return;
+        }
+
+        int mapIndex = ParseIntSafe(parts[1]);
+        DuelAbility p1Ability = (DuelAbility)Mathf.Clamp(ParseIntSafe(parts[2]), 0, System.Enum.GetValues(typeof(DuelAbility)).Length - 1);
+        DuelAbility p2Ability = (DuelAbility)Mathf.Clamp(ParseIntSafe(parts[3]), 0, System.Enum.GetValues(typeof(DuelAbility)).Length - 1);
+        string p1Name = parts.Length > 4 ? DecodeText(parts[4]) : "Player 1";
+        string p2Name = parts.Length > 5 ? DecodeText(parts[5]) : "Player 2";
+
+        opponentName = hostRole ? p2Name : p1Name;
+        opponentAbility = hostRole ? p2Ability : p1Ability;
+        hostMatchStarted = hostRole;
+        initSent = hostRole;
+        game.StartRound(mapIndex, p1Ability, p2Ability, p1Name, p2Name);
+        game.SetOnlineRole(true, hostRole);
+        game.SetMatchRunning(true);
     }
 
     private void SendLine(string line)

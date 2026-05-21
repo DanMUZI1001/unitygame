@@ -91,6 +91,41 @@ function getOpenRoom() {
   return null;
 }
 
+function encodeName(value) {
+  return Buffer.from(value || "Player", "utf8").toString("base64");
+}
+
+function getClientInfo(socket, fallbackName) {
+  const info = clients.get(socket && socket.clientId);
+  return {
+    name: (info && info.name) || fallbackName,
+    ability: Number((info && info.ability) || 0)
+  };
+}
+
+function startMatchIfReady(roomCode, room) {
+  if (!room.host || !room.client) {
+    return;
+  }
+
+  const hostInfo = getClientInfo(room.host, "Player 1");
+  const clientInfo = getClientInfo(room.client, "Player 2");
+  const mapIndex = Math.floor(Math.random() * 14);
+  const message = [
+    "MATCH",
+    mapIndex,
+    hostInfo.ability,
+    clientInfo.ability,
+    encodeName(hostInfo.name),
+    encodeName(clientInfo.name)
+  ].join("|");
+
+  room.lastInit = message;
+  room.lastSnapshot = null;
+  send(room.host, message);
+  send(room.client, message);
+}
+
 function broadcastLobby() {
   const users = [];
 
@@ -158,8 +193,9 @@ function enterRoom(socket, roomCode, role) {
     send(socket, "ROOM|" + roomCode + "|HOST");
 
     if (room.client) {
-      const clientInfo = clients.get(room.client.clientId);
-      send(socket, "SYS|Client connected|" + Buffer.from(clientInfo?.name || "Player 2", "utf8").toString("base64") + "|" + (clientInfo?.ability || 0));
+      const clientInfo = getClientInfo(room.client, "Player 2");
+      send(socket, "SYS|Client connected|" + encodeName(clientInfo.name) + "|" + clientInfo.ability);
+      startMatchIfReady(roomCode, room);
     }
   } else {
     if (!room.host) {
@@ -175,17 +211,13 @@ function enterRoom(socket, roomCode, role) {
     }
 
     room.client = socket;
+    room.lastInit = null;
+    room.lastSnapshot = null;
     send(socket, "ROOM|" + roomCode + "|CLIENT");
-    const clientInfo = clients.get(socket.clientId);
-    send(room.host, "SYS|Client connected|" + Buffer.from(clientInfo?.name || "Player 2", "utf8").toString("base64") + "|" + (clientInfo?.ability || 0));
+    const clientInfo = getClientInfo(socket, "Player 2");
+    send(room.host, "SYS|Client connected|" + encodeName(clientInfo.name) + "|" + clientInfo.ability);
 
-    if (room.lastInit) {
-      send(socket, room.lastInit);
-    }
-
-    if (room.lastSnapshot) {
-      send(socket, room.lastSnapshot);
-    }
+    startMatchIfReady(roomCode, room);
   }
 
   const client = clients.get(socket.clientId);
