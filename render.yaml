@@ -5,3 +5,4 @@ services:
     buildCommand: cd WebRelayServer && npm install
     startCommand: node WebRelayServer/server.js
     plan: free
+    autoDeploy: true
