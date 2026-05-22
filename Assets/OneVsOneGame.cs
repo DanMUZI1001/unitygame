@@ -358,8 +358,17 @@ public class OneVsOneGame : MonoBehaviour
             return;
         }
 
-        player1.ApplyNetworkState(p1Position, p1Rotation, p1Health);
-        player2.ApplyNetworkState(p2Position, p2Rotation, p2Health);
+        if (onlineMode && !onlineHost)
+        {
+            player1.ApplyNetworkVisualState(p1Position, p1Rotation, p1Health);
+            player2.ApplyNetworkVisualState(p2Position, p2Rotation, p2Health);
+        }
+        else
+        {
+            player1.ApplyNetworkState(p1Position, p1Rotation, p1Health);
+            player2.ApplyNetworkState(p2Position, p2Rotation, p2Health);
+        }
+
         timeLeft = syncedTime;
         winnerMessage = syncedWinner ?? "";
     }
@@ -1242,6 +1251,9 @@ public class DuelPlayer : MonoBehaviour
     private Vector3 networkCorrectionPosition;
     private float networkCorrectionYaw;
     private bool hasNetworkCorrection;
+    private Vector3 networkVisualPosition;
+    private Quaternion networkVisualRotation;
+    private bool hasNetworkVisualState;
     private bool acceptsLocalInput = true;
     private bool acceptsExternalInput;
     private DuelInputState externalInput;
@@ -1354,12 +1366,28 @@ public class DuelPlayer : MonoBehaviour
 
     public void ApplyNetworkState(Vector3 position, Quaternion rotation, int health)
     {
+        hasNetworkVisualState = false;
         transform.position = position;
         transform.rotation = rotation;
         aimYaw = rotation.eulerAngles.y;
         Health = Mathf.Clamp(health, 0, maxHealth);
         moveVelocity = Vector3.zero;
         pushVelocity = Vector3.zero;
+    }
+
+    public void ApplyNetworkVisualState(Vector3 position, Quaternion rotation, int health)
+    {
+        Health = Mathf.Clamp(health, 0, maxHealth);
+        networkVisualPosition = position;
+        networkVisualRotation = rotation;
+        if (!hasNetworkVisualState || Vector3.Distance(transform.position, position) > 3f)
+        {
+            MoveToNetworkPosition(position);
+            transform.rotation = rotation;
+            aimYaw = rotation.eulerAngles.y;
+        }
+
+        hasNetworkVisualState = true;
     }
 
     public void ApplyNetworkHealth(int health)
@@ -1434,6 +1462,13 @@ public class DuelPlayer : MonoBehaviour
             return;
         }
 
+        if (hasNetworkVisualState && !acceptsLocalInput && !acceptsExternalInput)
+        {
+            ApplyNetworkVisualInterpolation();
+            HideExpiredAttackVisual();
+            return;
+        }
+
         if (acceptsLocalInput)
         {
             UpdateMouseAim();
@@ -1460,6 +1495,14 @@ public class DuelPlayer : MonoBehaviour
         ApplyPendingNetworkCorrection();
         HandleActions();
         HideExpiredAttackVisual();
+    }
+
+    private void ApplyNetworkVisualInterpolation()
+    {
+        Vector3 nextPosition = Vector3.Lerp(transform.position, networkVisualPosition, 18f * Time.deltaTime);
+        MoveToNetworkPosition(nextPosition);
+        transform.rotation = Quaternion.Slerp(transform.rotation, networkVisualRotation, 18f * Time.deltaTime);
+        aimYaw = transform.eulerAngles.y;
     }
 
     private void ApplyPendingNetworkCorrection()
