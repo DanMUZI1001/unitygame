@@ -359,7 +359,15 @@ public class OneVsOneGame : MonoBehaviour
         }
 
         player1.ApplyNetworkState(p1Position, p1Rotation, p1Health);
-        player2.ApplyNetworkState(p2Position, p2Rotation, p2Health);
+        if (onlineMode && !onlineHost)
+        {
+            player2.ApplyNetworkHealth(p2Health);
+        }
+        else
+        {
+            player2.ApplyNetworkState(p2Position, p2Rotation, p2Health);
+        }
+
         timeLeft = syncedTime;
         winnerMessage = syncedWinner ?? "";
     }
@@ -1202,7 +1210,7 @@ public class DuelPlayer : MonoBehaviour
     [SerializeField] private float acceleration = 28f;
     [SerializeField] private float inputSmoothTime = 0.08f;
     [SerializeField] private float rotationDegreesPerSecond = 720f;
-    [SerializeField] private float mouseTurnDegreesPerSecond = 145f;
+    [SerializeField] private float mouseTurnDegreesPerSecond = 105f;
     [SerializeField] private float jumpForce = 8.7f;
     [SerializeField] private int maxHealth = 100;
     [SerializeField] private int attackDamage = 16;
@@ -1351,6 +1359,11 @@ public class DuelPlayer : MonoBehaviour
         Health = Mathf.Clamp(health, 0, maxHealth);
         moveVelocity = Vector3.zero;
         pushVelocity = Vector3.zero;
+    }
+
+    public void ApplyNetworkHealth(int health)
+    {
+        Health = Mathf.Clamp(health, 0, maxHealth);
     }
 
     public string GetHudText(string label)
