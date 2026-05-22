@@ -89,6 +89,7 @@ public class OneVsOneGame : MonoBehaviour
         _ = typeof(BoxCollider);
         _ = typeof(CapsuleCollider);
         _ = typeof(SphereCollider);
+        _ = typeof(CharacterController);
     }
 
     private void Start()
@@ -466,6 +467,18 @@ public class OneVsOneGame : MonoBehaviour
         Renderer capsuleRenderer = playerObject.GetComponent<Renderer>();
         ApplyVisibleColor(capsuleRenderer, color);
         capsuleRenderer.enabled = true;
+        Collider playerCollider = playerObject.GetComponent<Collider>();
+        if (playerCollider != null)
+        {
+            Destroy(playerCollider);
+        }
+
+        CharacterController controller = playerObject.AddComponent<CharacterController>();
+        controller.height = 2f;
+        controller.radius = 0.43f;
+        controller.skinWidth = 0.04f;
+        controller.stepOffset = 0.25f;
+        controller.slopeLimit = 45f;
 
         DuelPlayer player = playerObject.AddComponent<DuelPlayer>();
         player.Setup(playerName, up, down, left, right, jump, attack, skillOne, skillTwo, ability);
@@ -603,14 +616,6 @@ public class OneVsOneGame : MonoBehaviour
         scaleMatchGeometry = true;
 
         BuildFloor(mapIndex);
-
-        if (HasOuterWalls(mapIndex))
-        {
-            CreateOuterWall("North Wall", new Vector3(0f, OuterWallHeight * 0.5f, currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, OuterWallHeight, 0.45f));
-            CreateOuterWall("South Wall", new Vector3(0f, OuterWallHeight * 0.5f, -currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, OuterWallHeight, 0.45f));
-            CreateOuterWall("West Wall", new Vector3(-currentMapSize.x * 0.5f, OuterWallHeight * 0.5f, 0f), new Vector3(0.45f, OuterWallHeight, currentMapSize.y));
-            CreateOuterWall("East Wall", new Vector3(currentMapSize.x * 0.5f, OuterWallHeight * 0.5f, 0f), new Vector3(0.45f, OuterWallHeight, currentMapSize.y));
-        }
 
         switch (mapIndex)
         {
@@ -772,11 +777,6 @@ public class OneVsOneGame : MonoBehaviour
         }
     }
 
-    private bool HasOuterWalls(int mapIndex)
-    {
-        return mapIndex <= 5 || mapIndex == 12;
-    }
-
     private void BuildHoleFloor()
     {
         CreateBlock("Floor Left", new Vector3(-6.75f, 0f, 0f), new Vector3(4.5f, 0.25f, 12f), new Color(0.23f, 0.34f, 0.29f), true);
@@ -867,14 +867,9 @@ public class OneVsOneGame : MonoBehaviour
         CreateBlock(platformName, new Vector3(x, height * 0.5f, z), new Vector3(width, height, length), new Color(0.32f, 0.4f, 0.36f), true);
     }
 
-    private void CreateOuterWall(string wallName, Vector3 position, Vector3 scale)
-    {
-        CreateBlock(wallName, position, scale, new Color(0.55f, 0.5f, 0.42f), true);
-    }
-
     private void AddObstacle(string blockName, float x, float z, float width, float length)
     {
-        CreateBlock(blockName, new Vector3(x, 0.8f, z), new Vector3(width, 1.6f, length), new Color(0.45f, 0.42f, 0.32f), true);
+        CreateBlock(blockName, new Vector3(x, OuterWallHeight * 0.5f, z), new Vector3(width, OuterWallHeight, length), new Color(0.45f, 0.42f, 0.32f), true);
     }
 
     private GameObject CreateBlock(string blockName, Vector3 position, Vector3 scale, Color color, bool hasCollider)
@@ -1149,6 +1144,7 @@ public class DuelPlayer : MonoBehaviour
     private Vector3 inputSmoothVelocity;
     private Vector3 moveVelocity;
     private Vector3 pushVelocity;
+    private CharacterController characterController;
     private float verticalVelocity;
     private float nextAttackTime;
     private float nextSkillOneTime;
@@ -1322,6 +1318,7 @@ public class DuelPlayer : MonoBehaviour
     private void Awake()
     {
         Health = maxHealth;
+        characterController = GetComponent<CharacterController>();
     }
 
     private void Update()
@@ -1442,11 +1439,11 @@ public class DuelPlayer : MonoBehaviour
         moveVelocity = Vector3.MoveTowards(moveVelocity, targetVelocity, acceleration * Time.deltaTime);
         pushVelocity = Vector3.MoveTowards(pushVelocity, Vector3.zero, 10f * Time.deltaTime);
 
-        bool grounded = transform.position.y <= 1.01f;
+        bool grounded = characterController != null ? characterController.isGrounded : transform.position.y <= 1.01f;
 
         if (grounded && verticalVelocity < 0f)
         {
-            verticalVelocity = -1f;
+            verticalVelocity = -2f;
         }
 
         if (grounded && activeInput.Jump && Time.time >= stunEndTime)
@@ -1460,7 +1457,29 @@ public class DuelPlayer : MonoBehaviour
 
         Vector3 frameMovement = (moveVelocity + pushVelocity) * Time.deltaTime;
         frameMovement.y = verticalVelocity * Time.deltaTime;
-        transform.position += frameMovement;
+        if (characterController != null && characterController.enabled)
+        {
+            CollisionFlags flags = characterController.Move(frameMovement);
+            if ((flags & CollisionFlags.Sides) != 0)
+            {
+                Vector3 blockedNormalVelocity = moveVelocity + pushVelocity;
+                blockedNormalVelocity.y = 0f;
+                if (blockedNormalVelocity.sqrMagnitude > 0.01f)
+                {
+                    moveVelocity *= 0.35f;
+                    pushVelocity *= 0.35f;
+                }
+            }
+
+            if ((flags & CollisionFlags.Below) != 0 && verticalVelocity < 0f)
+            {
+                verticalVelocity = -2f;
+            }
+        }
+        else
+        {
+            transform.position += frameMovement;
+        }
 
         if (transform.position.y < 1f && verticalVelocity <= 0f)
         {
