@@ -466,7 +466,6 @@ public class OneVsOneGame : MonoBehaviour
         DuelPlayer player = playerObject.AddComponent<DuelPlayer>();
         player.Setup(playerName, up, down, left, right, jump, attack, skillOne, skillTwo, ability);
         CreateAlwaysVisibleBody(playerObject.transform, color);
-        AttachCharacterModel(player, color, ability, playerName == "Player 2");
 
         GameObject attackVisual = new GameObject("Attack Visual");
         attackVisual.transform.SetParent(playerObject.transform);
@@ -508,68 +507,6 @@ public class OneVsOneGame : MonoBehaviour
         }
     }
 
-    private void AttachCharacterModel(DuelPlayer player, Color fallbackColor, DuelAbility ability, bool useAlternateSide)
-    {
-        string prefabName = GetCharacterPrefabName(ability, useAlternateSide);
-        Transform visual = CreateCharacterVisual(player.transform, prefabName, fallbackColor);
-        player.SetCharacterVisual(visual);
-    }
-
-    private Transform CreateCharacterVisual(Transform parent, string prefabName, Color fallbackColor)
-    {
-        GameObject prefab = Resources.Load<GameObject>("QuarterViewCharacters/" + prefabName);
-
-        if (prefab == null)
-        {
-            return CreateVisualCube("Fallback Character", parent, new Vector3(0f, 0.05f, 0f), new Vector3(0.9f, 1.65f, 0.9f), fallbackColor).transform;
-        }
-
-        GameObject model = Instantiate(prefab, parent);
-        model.name = "Character Model - " + prefabName;
-        model.transform.localPosition = Vector3.zero;
-        model.transform.localRotation = Quaternion.identity;
-        model.transform.localScale = Vector3.one * 0.92f;
-
-        foreach (Renderer renderer in model.GetComponentsInChildren<Renderer>())
-        {
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            renderer.receiveShadows = true;
-            ApplyVisibleColor(renderer, fallbackColor);
-        }
-
-        if (model.GetComponentsInChildren<Renderer>().Length == 0)
-        {
-            Destroy(model);
-            return CreateVisualCube("Fallback Character", parent, new Vector3(0f, 0.05f, 0f), new Vector3(0.9f, 1.65f, 0.9f), fallbackColor).transform;
-        }
-
-        return model.transform;
-    }
-
-    private string GetCharacterPrefabName(DuelAbility ability, bool useAlternateSide)
-    {
-        switch (ability)
-        {
-            case DuelAbility.FireMage:
-            case DuelAbility.Thunder:
-                return useAlternateSide ? "Enemy B" : "Luna";
-            case DuelAbility.IceMage:
-            case DuelAbility.Wind:
-                return useAlternateSide ? "Enemy C" : "Ludo";
-            case DuelAbility.Stone:
-                return useAlternateSide ? "Enemy D" : "Enemy A";
-            case DuelAbility.Shadow:
-            case DuelAbility.Poison:
-                return useAlternateSide ? "Enemy A" : "Enemy D";
-            case DuelAbility.Magnet:
-                return useAlternateSide ? "Ludo" : "Enemy C";
-            case DuelAbility.DashMaster:
-            case DuelAbility.Healer:
-            default:
-                return useAlternateSide ? "Luna" : "Player";
-        }
-    }
-
     private void UpdateLobbyAvatar(string id, string displayName, DuelAbility ability, Vector3 position, string room)
     {
         bool created = false;
@@ -579,7 +516,6 @@ public class OneVsOneGame : MonoBehaviour
             avatar.transform.SetParent(lobbyRoot != null ? lobbyRoot : mapRoot);
             avatar.transform.position = position;
             CreateAlwaysVisibleBody(avatar.transform, Color.Lerp(Color.cyan, Color.white, 0.35f));
-            CreateCharacterVisual(avatar.transform, GetCharacterPrefabName(ability, false), Color.Lerp(Color.cyan, Color.white, 0.35f));
             CreateLobbyText("Name", displayName, new Vector3(0f, 2.2f, 0f), 0.18f).transform.SetParent(avatar.transform, false);
             lobbyAvatars[id] = avatar;
             created = true;
