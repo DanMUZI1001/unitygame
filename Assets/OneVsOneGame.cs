@@ -361,7 +361,7 @@ public class OneVsOneGame : MonoBehaviour
         player1.ApplyNetworkState(p1Position, p1Rotation, p1Health);
         if (onlineMode && !onlineHost)
         {
-            player2.ApplyNetworkHealth(p2Health);
+            player2.ApplyNetworkCorrection(p2Position, p2Rotation, p2Health);
         }
         else
         {
@@ -1247,6 +1247,9 @@ public class DuelPlayer : MonoBehaviour
     private float shieldEndTime;
     private float poisonTickTime;
     private int poisonTicksLeft;
+    private Vector3 networkCorrectionPosition;
+    private float networkCorrectionYaw;
+    private bool hasNetworkCorrection;
     private bool acceptsLocalInput = true;
     private bool acceptsExternalInput;
     private DuelInputState externalInput;
@@ -1366,6 +1369,14 @@ public class DuelPlayer : MonoBehaviour
         Health = Mathf.Clamp(health, 0, maxHealth);
     }
 
+    public void ApplyNetworkCorrection(Vector3 position, Quaternion rotation, int health)
+    {
+        Health = Mathf.Clamp(health, 0, maxHealth);
+        networkCorrectionPosition = position;
+        networkCorrectionYaw = rotation.eulerAngles.y;
+        hasNetworkCorrection = true;
+    }
+
     public string GetHudText(string label)
     {
         return $"{label} HP: {Health}\nAbility: {GetAbilityName()}\nMove: WASD  Jump: Space\nAim: Mouse  Attack: Click\nE: {GetSkillName(1)}  R: {GetSkillName(2)}";
@@ -1448,8 +1459,46 @@ public class DuelPlayer : MonoBehaviour
         UpdateStatusEffects();
         ApplyAimRotation();
         Move();
+        ApplyPendingNetworkCorrection();
         HandleActions();
         HideExpiredAttackVisual();
+    }
+
+    private void ApplyPendingNetworkCorrection()
+    {
+        if (!hasNetworkCorrection)
+        {
+            return;
+        }
+
+        Vector3 offset = networkCorrectionPosition - transform.position;
+        float distance = offset.magnitude;
+        if (distance > 2.4f)
+        {
+            MoveToNetworkPosition(networkCorrectionPosition);
+            moveVelocity = Vector3.zero;
+            pushVelocity = Vector3.zero;
+        }
+        else if (distance > 0.04f)
+        {
+            MoveToNetworkPosition(Vector3.Lerp(transform.position, networkCorrectionPosition, 0.22f));
+        }
+
+        aimYaw = Mathf.MoveTowardsAngle(aimYaw, networkCorrectionYaw, 360f * Time.deltaTime);
+        hasNetworkCorrection = false;
+    }
+
+    private void MoveToNetworkPosition(Vector3 position)
+    {
+        if (characterController != null && characterController.enabled)
+        {
+            characterController.enabled = false;
+            transform.position = position;
+            characterController.enabled = true;
+            return;
+        }
+
+        transform.position = position;
     }
 
     private void UpdateMouseAim()
