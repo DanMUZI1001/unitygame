@@ -29,7 +29,9 @@ public struct DuelInputState
 
 public class OneVsOneGame : MonoBehaviour
 {
-    private const float MatchTime = 90f;
+    private const float MatchTime = 180f;
+    private const float MatchMapScale = 2f;
+    private const float OuterWallHeight = 8f;
     private const float ArenaHalfWidth = 8.75f;
     private const float ArenaHalfLength = 5.75f;
 
@@ -67,6 +69,7 @@ public class OneVsOneGame : MonoBehaviour
     private bool onlineHost;
     private bool lobbyMode;
     private bool matchRunning;
+    private bool scaleMatchGeometry;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateOnPlay()
@@ -434,11 +437,11 @@ public class OneVsOneGame : MonoBehaviour
         switch (currentMapIndex)
         {
             case 12:
-                return new Vector3(side * 14f, 1f, 0f);
+                return new Vector3(side * 14f * MatchMapScale, 1f, 0f);
             case 13:
-                return new Vector3(side * 6f, 1.8f, -5.5f);
+                return new Vector3(side * 6f * MatchMapScale, 1.8f, -5.5f * MatchMapScale);
             default:
-                return new Vector3(side * 5.8f, 1f, 0f);
+                return new Vector3(side * 5.8f * MatchMapScale, 1f, 0f);
         }
     }
 
@@ -597,15 +600,16 @@ public class OneVsOneGame : MonoBehaviour
     {
         mapRoot = new GameObject("Map - " + mapNames[mapIndex]).transform;
         currentMapSize = GetMapSize(mapIndex);
+        scaleMatchGeometry = true;
 
         BuildFloor(mapIndex);
 
         if (HasOuterWalls(mapIndex))
         {
-            CreateOuterWall("North Wall", new Vector3(0f, 0.85f, currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, 1.45f, 0.45f));
-            CreateOuterWall("South Wall", new Vector3(0f, 0.85f, -currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, 1.45f, 0.45f));
-            CreateOuterWall("West Wall", new Vector3(-currentMapSize.x * 0.5f, 0.85f, 0f), new Vector3(0.45f, 1.45f, currentMapSize.y));
-            CreateOuterWall("East Wall", new Vector3(currentMapSize.x * 0.5f, 0.85f, 0f), new Vector3(0.45f, 1.45f, currentMapSize.y));
+            CreateOuterWall("North Wall", new Vector3(0f, OuterWallHeight * 0.5f, currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, OuterWallHeight, 0.45f));
+            CreateOuterWall("South Wall", new Vector3(0f, OuterWallHeight * 0.5f, -currentMapSize.y * 0.5f), new Vector3(currentMapSize.x, OuterWallHeight, 0.45f));
+            CreateOuterWall("West Wall", new Vector3(-currentMapSize.x * 0.5f, OuterWallHeight * 0.5f, 0f), new Vector3(0.45f, OuterWallHeight, currentMapSize.y));
+            CreateOuterWall("East Wall", new Vector3(currentMapSize.x * 0.5f, OuterWallHeight * 0.5f, 0f), new Vector3(0.45f, OuterWallHeight, currentMapSize.y));
         }
 
         switch (mapIndex)
@@ -674,6 +678,9 @@ public class OneVsOneGame : MonoBehaviour
                 AddObstacle("Tower Center Cover", 0f, 0f, 1.2f, 1.2f);
                 break;
         }
+
+        AddExtraObstacles(mapIndex);
+        scaleMatchGeometry = false;
     }
 
     private void BuildFloor(int mapIndex)
@@ -705,8 +712,63 @@ public class OneVsOneGame : MonoBehaviour
                 BuildTowerHeightsFloor();
                 break;
             default:
-                CreateBlock("Arena Floor", Vector3.zero, new Vector3(18f, 0.25f, 12f), new Color(0.25f, 0.36f, 0.31f), true);
+                BuildPerforatedArenaFloor();
                 break;
+        }
+    }
+
+    private void BuildPerforatedArenaFloor()
+    {
+        Color floorColor = new Color(0.25f, 0.36f, 0.31f);
+        const float tileSize = 2f;
+        float halfWidth = 9f;
+        float halfLength = 6f;
+
+        for (float x = -halfWidth + tileSize * 0.5f; x < halfWidth; x += tileSize)
+        {
+            for (float z = -halfLength + tileSize * 0.5f; z < halfLength; z += tileSize)
+            {
+                if (IsFloorHoleTile(x, z))
+                {
+                    continue;
+                }
+
+                CreateBlock("Arena Floor Tile", new Vector3(x, 0f, z), new Vector3(tileSize, 0.25f, tileSize), floorColor, true);
+            }
+        }
+
+        CreateBlock("Left Spawn Safe Floor", new Vector3(-5.8f, 0.02f, 0f), new Vector3(3.8f, 0.22f, 3.8f), floorColor, true);
+        CreateBlock("Right Spawn Safe Floor", new Vector3(5.8f, 0.02f, 0f), new Vector3(3.8f, 0.22f, 3.8f), floorColor, true);
+    }
+
+    private bool IsFloorHoleTile(float x, float z)
+    {
+        return
+            IsInsideRect(x, z, -2.8f, 2.8f, 1.8f, 1.4f) ||
+            IsInsideRect(x, z, 2.8f, -2.8f, 1.8f, 1.4f) ||
+            IsInsideRect(x, z, 0f, 0f, 1.4f, 1.4f) ||
+            IsInsideRect(x, z, -6f, -3.8f, 1.6f, 1.2f) ||
+            IsInsideRect(x, z, 6f, 3.8f, 1.6f, 1.2f);
+    }
+
+    private bool IsInsideRect(float x, float z, float centerX, float centerZ, float width, float length)
+    {
+        return Mathf.Abs(x - centerX) <= width * 0.5f && Mathf.Abs(z - centerZ) <= length * 0.5f;
+    }
+
+    private void AddExtraObstacles(int mapIndex)
+    {
+        AddObstacle("Extra North Left Cover", -6.5f, 4.4f, 2.2f, 0.9f);
+        AddObstacle("Extra North Right Cover", 6.5f, 4.4f, 2.2f, 0.9f);
+        AddObstacle("Extra South Left Cover", -6.5f, -4.4f, 2.2f, 0.9f);
+        AddObstacle("Extra South Right Cover", 6.5f, -4.4f, 2.2f, 0.9f);
+        AddObstacle("Extra Mid Pillar A", -3.2f, 0f, 1.1f, 1.1f);
+        AddObstacle("Extra Mid Pillar B", 3.2f, 0f, 1.1f, 1.1f);
+
+        if (mapIndex >= 10)
+        {
+            AddObstacle("Extra High Cover A", -7.5f, 7.5f, 2.4f, 1.2f);
+            AddObstacle("Extra High Cover B", 7.5f, -7.5f, 2.4f, 1.2f);
         }
     }
 
@@ -820,6 +882,12 @@ public class OneVsOneGame : MonoBehaviour
         GameObject block = GameObject.CreatePrimitive(PrimitiveType.Cube);
         block.name = blockName;
         block.transform.SetParent(mapRoot);
+        if (scaleMatchGeometry)
+        {
+            position = new Vector3(position.x * MatchMapScale, position.y, position.z * MatchMapScale);
+            scale = new Vector3(scale.x * MatchMapScale, scale.y, scale.z * MatchMapScale);
+        }
+
         block.transform.position = position;
         block.transform.localScale = scale;
         ApplyVisibleColor(block.GetComponent<Renderer>(), color);
