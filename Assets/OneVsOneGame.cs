@@ -20,6 +20,7 @@ public struct DuelInputState
 {
     public float MoveX;
     public float MoveZ;
+    public float AimYaw;
     public bool Jump;
     public bool Attack;
     public bool SkillOne;
@@ -171,10 +172,10 @@ public class OneVsOneGame : MonoBehaviour
             KeyCode.S,
             KeyCode.A,
             KeyCode.D,
-            KeyCode.C,
             KeyCode.F,
-            KeyCode.G,
-            KeyCode.H,
+            KeyCode.Mouse0,
+            KeyCode.E,
+            KeyCode.R,
             p1Ability);
 
         player2 = CreatePlayer(
@@ -185,10 +186,10 @@ public class OneVsOneGame : MonoBehaviour
             KeyCode.DownArrow,
             KeyCode.LeftArrow,
             KeyCode.RightArrow,
-            KeyCode.Slash,
-            KeyCode.Period,
-            KeyCode.Comma,
-            KeyCode.M,
+            KeyCode.F,
+            KeyCode.Mouse0,
+            KeyCode.E,
+            KeyCode.R,
             p2Ability);
 
         player1.SetOpponent(player2);
@@ -347,8 +348,8 @@ public class OneVsOneGame : MonoBehaviour
 
         if (!onlineMode)
         {
-            player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.C, KeyCode.F, KeyCode.G, KeyCode.H);
-            player2.SetControls(KeyCode.UpArrow, KeyCode.DownArrow, KeyCode.LeftArrow, KeyCode.RightArrow, KeyCode.Slash, KeyCode.Period, KeyCode.Comma, KeyCode.M);
+            player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
+            player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
             player1.SetLocalInputEnabled(true);
             player1.SetExternalInputEnabled(false);
             player2.SetLocalInputEnabled(true);
@@ -356,8 +357,8 @@ public class OneVsOneGame : MonoBehaviour
             return;
         }
 
-        player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.C, KeyCode.F, KeyCode.G, KeyCode.H);
-        player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.C, KeyCode.F, KeyCode.G, KeyCode.H);
+        player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
+        player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
         player1.SetLocalInputEnabled(onlineHost);
         player1.SetExternalInputEnabled(false);
         player2.SetLocalInputEnabled(!onlineHost);
@@ -935,8 +936,8 @@ public class OneVsOneGame : MonoBehaviour
 
         float rightPanelX = Mathf.Max(16f, Screen.width - 376f);
         float rightPanelY = Screen.width < 760 ? 132f : 16f;
-        DrawPanel(new Rect(16f, 16f, 360f, 110f), player1.GetHudText("P1", "C", "G", "H"));
-        DrawPanel(new Rect(rightPanelX, rightPanelY, 360f, 110f), player2.GetHudText("P2", "/", ",", "M"));
+        DrawPanel(new Rect(16f, 16f, 360f, 110f), player1.GetHudText("P1"));
+        DrawPanel(new Rect(rightPanelX, rightPanelY, 360f, 110f), player2.GetHudText("P2"));
         DrawPanel(new Rect(Mathf.Max(16f, (Screen.width - 180f) * 0.5f), Screen.width < 760 ? 250f : 16f, 180f, 48f), matchRunning ? FormatTime(timeLeft) : "Waiting");
 
         if (!string.IsNullOrEmpty(winnerMessage))
@@ -1055,6 +1056,7 @@ public class DuelPlayer : MonoBehaviour
     [SerializeField] private float acceleration = 28f;
     [SerializeField] private float inputSmoothTime = 0.08f;
     [SerializeField] private float rotationDegreesPerSecond = 720f;
+    [SerializeField] private float mouseTurnDegreesPerSecond = 220f;
     [SerializeField] private float jumpForce = 7.6f;
     [SerializeField] private int maxHealth = 100;
     [SerializeField] private int attackDamage = 16;
@@ -1094,6 +1096,7 @@ public class DuelPlayer : MonoBehaviour
     private bool acceptsExternalInput;
     private DuelInputState externalInput;
     private DuelInputState activeInput;
+    private float aimYaw;
 
     public int Health { get; private set; }
     public DuelAbility Ability => ability;
@@ -1111,6 +1114,7 @@ public class DuelPlayer : MonoBehaviour
         skillTwoKey = skillTwo;
         ability = selectedAbility;
         Health = maxHealth;
+        aimYaw = transform.eulerAngles.y;
     }
 
     public void SetOpponent(DuelPlayer target)
@@ -1183,8 +1187,9 @@ public class DuelPlayer : MonoBehaviour
             input.MoveX += 1f;
         }
 
+        input.AimYaw = aimYaw;
         input.Jump = Input.GetKeyDown(jumpKey);
-        input.Attack = Input.GetKeyDown(attackKey);
+        input.Attack = attackKey == KeyCode.Mouse0 ? Input.GetMouseButtonDown(0) : Input.GetKeyDown(attackKey);
         input.SkillOne = Input.GetKeyDown(skillOneKey);
         input.SkillTwo = Input.GetKeyDown(skillTwoKey);
         return input;
@@ -1194,14 +1199,15 @@ public class DuelPlayer : MonoBehaviour
     {
         transform.position = position;
         transform.rotation = rotation;
+        aimYaw = rotation.eulerAngles.y;
         Health = Mathf.Clamp(health, 0, maxHealth);
         moveVelocity = Vector3.zero;
         pushVelocity = Vector3.zero;
     }
 
-    public string GetHudText(string label, string jumpName, string skillOneName, string skillTwoName)
+    public string GetHudText(string label)
     {
-        return $"{label} HP: {Health}\nAbility: {GetAbilityName()}\nJump: {jumpName}  {skillOneName}: {GetSkillName(1)}  {skillTwoName}: {GetSkillName(2)}";
+        return $"{label} HP: {Health}\nAbility: {GetAbilityName()}\nMove: WASD  Aim: Mouse  Attack: Click\nE: {GetSkillName(1)}  R: {GetSkillName(2)}  F: Leap";
     }
 
     public void TakeDamage(int damage)
@@ -1259,11 +1265,13 @@ public class DuelPlayer : MonoBehaviour
 
         if (acceptsLocalInput)
         {
+            UpdateMouseAim();
             activeInput = ReadLocalInput();
         }
         else if (acceptsExternalInput)
         {
             activeInput = externalInput;
+            aimYaw = externalInput.AimYaw;
             externalInput.Attack = false;
             externalInput.SkillOne = false;
             externalInput.SkillTwo = false;
@@ -1276,9 +1284,39 @@ public class DuelPlayer : MonoBehaviour
         }
 
         UpdateStatusEffects();
+        ApplyAimRotation();
         Move();
         HandleActions();
         HideExpiredAttackVisual();
+    }
+
+    private void UpdateMouseAim()
+    {
+        if (Input.GetMouseButtonDown(0))
+        {
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+        }
+
+        if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+
+        float mouseX = Input.GetAxisRaw("Mouse X");
+        if (Mathf.Abs(mouseX) > 0.001f)
+        {
+            aimYaw += mouseX * mouseTurnDegreesPerSecond * Time.deltaTime;
+        }
+    }
+
+    private void ApplyAimRotation()
+    {
+        transform.rotation = Quaternion.RotateTowards(
+            transform.rotation,
+            Quaternion.Euler(0f, aimYaw, 0f),
+            rotationDegreesPerSecond * Time.deltaTime);
     }
 
     private void HideExpiredAttackVisual()
@@ -1314,9 +1352,9 @@ public class DuelPlayer : MonoBehaviour
             rawInput.Normalize();
         }
 
-        if (acceptsLocalInput && rawInput.sqrMagnitude > 0.001f)
+        if (rawInput.sqrMagnitude > 0.001f)
         {
-            rawInput = GetCameraRelativeMove(rawInput);
+            rawInput = GetAimRelativeMove(rawInput);
         }
 
         smoothedInput = Vector3.SmoothDamp(smoothedInput, rawInput, ref inputSmoothVelocity, inputSmoothTime);
@@ -1364,40 +1402,14 @@ public class DuelPlayer : MonoBehaviour
             verticalVelocity = -1f;
         }
 
-        Vector3 lookVelocity = moveVelocity + pushVelocity;
-        if (lookVelocity.sqrMagnitude > 0.04f)
-        {
-            Quaternion targetRotation = Quaternion.LookRotation(lookVelocity.normalized, Vector3.up);
-            transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationDegreesPerSecond * Time.deltaTime);
-        }
-
-        AnimateCharacterVisual(lookVelocity);
+        AnimateCharacterVisual(moveVelocity + pushVelocity);
     }
 
-    private Vector3 GetCameraRelativeMove(Vector3 input)
+    private Vector3 GetAimRelativeMove(Vector3 input)
     {
-        Camera camera = Camera.main;
-        if (camera == null)
-        {
-            return input;
-        }
-
-        Vector3 forward = camera.transform.forward;
-        forward.y = 0f;
-        if (forward.sqrMagnitude < 0.001f)
-        {
-            forward = Vector3.forward;
-        }
-        forward.Normalize();
-
-        Vector3 right = camera.transform.right;
-        right.y = 0f;
-        if (right.sqrMagnitude < 0.001f)
-        {
-            right = Vector3.right;
-        }
-        right.Normalize();
-
+        Quaternion aimRotation = Quaternion.Euler(0f, aimYaw, 0f);
+        Vector3 forward = aimRotation * Vector3.forward;
+        Vector3 right = aimRotation * Vector3.right;
         Vector3 move = right * input.x + forward * input.z;
         return move.sqrMagnitude > 1f ? move.normalized : move;
     }

@@ -69,6 +69,16 @@ Join Open button or 2: Join open room
 Leave Room button or 3: Leave room
 ```
 
+Match controls:
+
+```text
+WASD: move without turning
+Mouse: turn aim direction
+Left click: basic attack
+E / R / F: skills
+Esc: release mouse cursor
+```
+
 Local in-game server URL:
 
 ```text

@@ -443,7 +443,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
                 status = isHost ? "Match started as Player 1" : "Match started as Player 2";
                 break;
             case "IN":
-                if (!isHost || parts.Length < 7)
+                if (!isHost || parts.Length < 8)
                 {
                     return;
                 }
@@ -452,10 +452,11 @@ public class OnlineNetworkBootstrap : MonoBehaviour
                 {
                     MoveX = ParseFloat(parts[1]),
                     MoveZ = ParseFloat(parts[2]),
-                    Jump = parts[3] == "1",
-                    Attack = parts[4] == "1",
-                    SkillOne = parts[5] == "1",
-                    SkillTwo = parts[6] == "1"
+                    AimYaw = ParseFloat(parts[3]),
+                    Jump = parts[4] == "1",
+                    Attack = parts[5] == "1",
+                    SkillOne = parts[6] == "1",
+                    SkillTwo = parts[7] == "1"
                 });
                 break;
             case "SNAP":
@@ -485,7 +486,7 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         }
 
         DuelInputState input = game.ReadPlayer2LocalInput();
-        SendLine($"IN|{Format(input.MoveX)}|{Format(input.MoveZ)}|{Bool(input.Jump)}|{Bool(input.Attack)}|{Bool(input.SkillOne)}|{Bool(input.SkillTwo)}");
+        SendLine($"IN|{Format(input.MoveX)}|{Format(input.MoveZ)}|{Format(input.AimYaw)}|{Bool(input.Jump)}|{Bool(input.Attack)}|{Bool(input.SkillOne)}|{Bool(input.SkillTwo)}");
     }
 
     private void SendSnapshot()

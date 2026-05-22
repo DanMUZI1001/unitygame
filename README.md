@@ -33,6 +33,16 @@ Join Open button or 2: Join open room
 Leave Room button or 3: Leave room
 ```
 
+Match controls:
+
+```text
+WASD: move without turning
+Mouse: turn aim direction
+Left click: basic attack
+E / R / F: skills
+Esc: release mouse cursor
+```
+
 The game uses the Node WebSocket relay, so two browser tabs or two PCs that open the same URL can meet in the online lobby and enter a 1v1 room.
 
 Match camera:
