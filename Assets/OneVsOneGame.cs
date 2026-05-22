@@ -348,7 +348,7 @@ public class OneVsOneGame : MonoBehaviour
 
     public DuelInputState ReadPlayer2LocalInput()
     {
-        return player2 != null ? player2.ReadLocalInput() : new DuelInputState();
+        return player2 != null ? player2.CaptureLocalNetworkInput() : new DuelInputState();
     }
 
     public void ApplyNetworkSnapshot(Vector3 p1Position, Quaternion p1Rotation, int p1Health, Vector3 p2Position, Quaternion p2Rotation, int p2Health, float syncedTime, string syncedWinner)
@@ -359,15 +359,7 @@ public class OneVsOneGame : MonoBehaviour
         }
 
         player1.ApplyNetworkState(p1Position, p1Rotation, p1Health);
-        if (onlineMode && !onlineHost)
-        {
-            player2.ApplyNetworkCorrection(p2Position, p2Rotation, p2Health);
-        }
-        else
-        {
-            player2.ApplyNetworkState(p2Position, p2Rotation, p2Health);
-        }
-
+        player2.ApplyNetworkState(p2Position, p2Rotation, p2Health);
         timeLeft = syncedTime;
         winnerMessage = syncedWinner ?? "";
     }
@@ -394,7 +386,7 @@ public class OneVsOneGame : MonoBehaviour
         player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.Space, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
         player1.SetLocalInputEnabled(onlineHost);
         player1.SetExternalInputEnabled(false);
-        player2.SetLocalInputEnabled(!onlineHost);
+        player2.SetLocalInputEnabled(false);
         player2.SetExternalInputEnabled(onlineHost);
     }
 
@@ -1352,6 +1344,12 @@ public class DuelPlayer : MonoBehaviour
         input.SkillOne = Input.GetKeyDown(skillOneKey);
         input.SkillTwo = Input.GetKeyDown(skillTwoKey);
         return input;
+    }
+
+    public DuelInputState CaptureLocalNetworkInput()
+    {
+        UpdateMouseAim();
+        return ReadLocalInput();
     }
 
     public void ApplyNetworkState(Vector3 position, Quaternion rotation, int health)
