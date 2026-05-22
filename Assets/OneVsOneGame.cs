@@ -70,6 +70,11 @@ public class OneVsOneGame : MonoBehaviour
     private bool lobbyMode;
     private bool matchRunning;
     private bool scaleMatchGeometry;
+    private int lastMapIndex;
+    private DuelAbility lastPlayer1Ability;
+    private DuelAbility lastPlayer2Ability;
+    private string lastPlayer1Name = "Player 1";
+    private string lastPlayer2Name = "Player 2";
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateOnPlay()
@@ -118,9 +123,20 @@ public class OneVsOneGame : MonoBehaviour
         {
             if (Input.GetKeyDown(KeyCode.R))
             {
-                StartRound();
+                RestartCurrentRound();
             }
 
+            if (Input.GetKeyDown(KeyCode.M))
+            {
+                ReturnToMenu();
+            }
+
+            return;
+        }
+
+        if (Input.GetKeyDown(KeyCode.M))
+        {
+            ReturnToMenu();
             return;
         }
 
@@ -134,11 +150,11 @@ public class OneVsOneGame : MonoBehaviour
 
         if (player1.Health <= 0)
         {
-            winnerMessage = "Player 2 Wins!";
+            winnerMessage = BuildWinMessage(player2, "Player 2");
         }
         else if (player2.Health <= 0)
         {
-            winnerMessage = "Player 1 Wins!";
+            winnerMessage = BuildWinMessage(player1, "Player 1");
         }
         else if (timeLeft <= 0f)
         {
@@ -162,35 +178,40 @@ public class OneVsOneGame : MonoBehaviour
         timeLeft = MatchTime;
         lobbyMode = false;
         matchRunning = true;
+        lastMapIndex = Mathf.Clamp(mapIndex, 0, mapNames.Length - 1);
+        lastPlayer1Ability = p1Ability;
+        lastPlayer2Ability = p2Ability;
+        lastPlayer1Name = string.IsNullOrWhiteSpace(player1Name) ? "Player 1" : player1Name;
+        lastPlayer2Name = string.IsNullOrWhiteSpace(player2Name) ? "Player 2" : player2Name;
 
         ClearLobby();
         ClearOldRound();
-        currentMapIndex = Mathf.Clamp(mapIndex, 0, mapNames.Length - 1);
+        currentMapIndex = lastMapIndex;
         BuildMap(currentMapIndex);
 
         player1 = CreatePlayer(
-            string.IsNullOrWhiteSpace(player1Name) ? "Player 1" : player1Name,
+            lastPlayer1Name,
             GetPlayerSpawnPosition(1),
             Color.blue,
             KeyCode.W,
             KeyCode.S,
             KeyCode.A,
             KeyCode.D,
-            KeyCode.F,
+            KeyCode.Space,
             KeyCode.Mouse0,
             KeyCode.E,
             KeyCode.R,
             p1Ability);
 
         player2 = CreatePlayer(
-            string.IsNullOrWhiteSpace(player2Name) ? "Player 2" : player2Name,
+            lastPlayer2Name,
             GetPlayerSpawnPosition(2),
             Color.red,
             KeyCode.UpArrow,
             KeyCode.DownArrow,
             KeyCode.LeftArrow,
             KeyCode.RightArrow,
-            KeyCode.F,
+            KeyCode.Space,
             KeyCode.Mouse0,
             KeyCode.E,
             KeyCode.R,
@@ -352,8 +373,8 @@ public class OneVsOneGame : MonoBehaviour
 
         if (!onlineMode)
         {
-            player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
-            player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
+            player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.Space, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
+            player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.Space, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
             player1.SetLocalInputEnabled(true);
             player1.SetExternalInputEnabled(false);
             player2.SetLocalInputEnabled(true);
@@ -361,8 +382,8 @@ public class OneVsOneGame : MonoBehaviour
             return;
         }
 
-        player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
-        player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.F, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
+        player1.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.Space, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
+        player2.SetControls(KeyCode.W, KeyCode.S, KeyCode.A, KeyCode.D, KeyCode.Space, KeyCode.Mouse0, KeyCode.E, KeyCode.R);
         player1.SetLocalInputEnabled(onlineHost);
         player1.SetExternalInputEnabled(false);
         player2.SetLocalInputEnabled(!onlineHost);
@@ -391,16 +412,76 @@ public class OneVsOneGame : MonoBehaviour
     {
         if (player1.Health > player2.Health)
         {
-            winnerMessage = "Time Up! Player 1 Wins!";
+            winnerMessage = "Time Up! " + BuildWinMessage(player1, "Player 1");
         }
         else if (player2.Health > player1.Health)
         {
-            winnerMessage = "Time Up! Player 2 Wins!";
+            winnerMessage = "Time Up! " + BuildWinMessage(player2, "Player 2");
         }
         else
         {
             winnerMessage = "Time Up! Draw!";
         }
+    }
+
+    private string BuildWinMessage(DuelPlayer winner, string fallbackName)
+    {
+        if (winner == null)
+        {
+            return fallbackName + " Wins!";
+        }
+
+        return winner.name + " (" + winner.AbilityDisplayName + ") Wins!";
+    }
+
+    private DuelPlayer GetLocalPlayer()
+    {
+        if (!onlineMode)
+        {
+            return player1;
+        }
+
+        return onlineHost ? player1 : player2;
+    }
+
+    private DuelPlayer GetRemotePlayer()
+    {
+        if (!onlineMode)
+        {
+            return player2;
+        }
+
+        return onlineHost ? player2 : player1;
+    }
+
+    private void RestartCurrentRound()
+    {
+        if (onlineMode && !onlineHost)
+        {
+            return;
+        }
+
+        StartRound(lastMapIndex, lastPlayer1Ability, lastPlayer2Ability, lastPlayer1Name, lastPlayer2Name);
+        if (onlineMode)
+        {
+            OnlineNetworkBootstrap network = FindAnyObjectByType<OnlineNetworkBootstrap>();
+            if (network != null)
+            {
+                network.MarkMatchRestarted();
+            }
+        }
+    }
+
+    private void ReturnToMenu()
+    {
+        OnlineNetworkBootstrap network = FindAnyObjectByType<OnlineNetworkBootstrap>();
+        if (network != null && network.IsInRoom)
+        {
+            network.LeaveToLobby();
+            return;
+        }
+
+        ShowLobby();
     }
 
     private void CheckFallDeaths()
@@ -981,7 +1062,6 @@ public class OneVsOneGame : MonoBehaviour
         }
     }
 
-#if !UNITY_WEBGL
     private void OnGUI()
     {
         GUI.color = Color.white;
@@ -997,15 +1077,18 @@ public class OneVsOneGame : MonoBehaviour
             return;
         }
 
+        DuelPlayer localPlayer = GetLocalPlayer();
+        DuelPlayer remotePlayer = GetRemotePlayer();
         float rightPanelX = Mathf.Max(16f, Screen.width - 376f);
-        float rightPanelY = Screen.width < 760 ? 132f : 16f;
-        DrawPanel(new Rect(16f, 16f, 360f, 110f), player1.GetHudText("P1"));
-        DrawPanel(new Rect(rightPanelX, rightPanelY, 360f, 110f), player2.GetHudText("P2"));
+        float rightPanelY = Screen.width < 760 ? 172f : 16f;
+        DrawPanel(new Rect(16f, 16f, 360f, 130f), localPlayer != null ? localPlayer.GetHudText("You") : "You");
+        DrawPanel(new Rect(rightPanelX, rightPanelY, 360f, 110f), remotePlayer != null ? remotePlayer.GetHudText("Enemy") : "Enemy");
         DrawPanel(new Rect(Mathf.Max(16f, (Screen.width - 180f) * 0.5f), Screen.width < 760 ? 250f : 16f, 180f, 48f), matchRunning ? FormatTime(timeLeft) : "Waiting");
+        DrawPanel(new Rect(16f, Screen.width < 760 ? 310f : 154f, 260f, 54f), onlineMode && !onlineHost ? "M: Menu\nHost: R Restart" : "M: Menu\nWin: R Restart");
 
         if (!string.IsNullOrEmpty(winnerMessage))
         {
-            DrawPanel(new Rect((Screen.width - 360f) * 0.5f, (Screen.height - 96f) * 0.5f, 360f, 96f), winnerMessage + "\nR: Rematch");
+            DrawPanel(new Rect((Screen.width - 420f) * 0.5f, (Screen.height - 118f) * 0.5f, 420f, 118f), winnerMessage + "\nR: Restart\nM: Menu");
         }
     }
 
@@ -1018,7 +1101,6 @@ public class OneVsOneGame : MonoBehaviour
         GUI.Label(new Rect(rect.x + 10f, rect.y + 8f, rect.width - 20f, rect.height - 16f), text);
         GUI.color = oldColor;
     }
-#endif
 
     private void CreateNameTag(Transform parent, string text)
     {
@@ -1032,6 +1114,7 @@ public class OneVsOneGame : MonoBehaviour
         textMesh.anchor = TextAnchor.MiddleCenter;
         textMesh.alignment = TextAlignment.Center;
         textMesh.color = Color.white;
+        tagObject.AddComponent<NameTagOcclusion>().Setup(parent);
     }
 
     private Material CreateMaterial(Color color)
@@ -1164,6 +1247,7 @@ public class DuelPlayer : MonoBehaviour
 
     public int Health { get; private set; }
     public DuelAbility Ability => ability;
+    public string AbilityDisplayName => GetAbilityName();
 
     public void Setup(string playerName, KeyCode up, KeyCode down, KeyCode left, KeyCode right, KeyCode jump, KeyCode attack, KeyCode skillOne, KeyCode skillTwo, DuelAbility selectedAbility)
     {
@@ -1271,7 +1355,7 @@ public class DuelPlayer : MonoBehaviour
 
     public string GetHudText(string label)
     {
-        return $"{label} HP: {Health}\nAbility: {GetAbilityName()}\nMove: WASD  Aim: Mouse  Attack: Click\nE: {GetSkillName(1)}  R: {GetSkillName(2)}  F: Leap";
+        return $"{label} HP: {Health}\nAbility: {GetAbilityName()}\nMove: WASD  Jump: Space\nAim: Mouse  Attack: Click\nE: {GetSkillName(1)}  R: {GetSkillName(2)}";
     }
 
     public void TakeDamage(int damage)
@@ -2368,6 +2452,64 @@ public class DuelProjectile : MonoBehaviour
         {
             hitPlayer.ApplyPoison();
         }
+    }
+}
+
+public class NameTagOcclusion : MonoBehaviour
+{
+    private Transform owner;
+    private Renderer tagRenderer;
+
+    public void Setup(Transform ownerTransform)
+    {
+        owner = ownerTransform;
+        tagRenderer = GetComponent<Renderer>();
+    }
+
+    private void Awake()
+    {
+        tagRenderer = GetComponent<Renderer>();
+    }
+
+    private void LateUpdate()
+    {
+        Camera camera = Camera.main;
+        if (camera == null || tagRenderer == null)
+        {
+            return;
+        }
+
+        transform.rotation = Quaternion.LookRotation(transform.position - camera.transform.position, Vector3.up);
+
+        Vector3 cameraPosition = camera.transform.position;
+        Vector3 toTag = transform.position - cameraPosition;
+        float distance = toTag.magnitude;
+        if (distance < 0.01f)
+        {
+            tagRenderer.enabled = true;
+            return;
+        }
+
+        RaycastHit[] hits = Physics.RaycastAll(cameraPosition, toTag.normalized, distance - 0.05f);
+        System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+        for (int i = 0; i < hits.Length; i++)
+        {
+            Collider hitCollider = hits[i].collider;
+            if (hitCollider == null || hitCollider.isTrigger)
+            {
+                continue;
+            }
+
+            if (owner != null && hitCollider.transform.IsChildOf(owner))
+            {
+                continue;
+            }
+
+            tagRenderer.enabled = false;
+            return;
+        }
+
+        tagRenderer.enabled = true;
     }
 }
 

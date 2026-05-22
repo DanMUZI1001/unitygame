@@ -255,7 +255,23 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         }
     }
 
-#if !UNITY_WEBGL
+    public void LeaveToLobby()
+    {
+        LeaveRoom();
+    }
+
+    public void MarkMatchRestarted()
+    {
+        if (!isHost)
+        {
+            return;
+        }
+
+        hostMatchStarted = true;
+        initSent = false;
+        status = "Room " + roomCode + " match restarted";
+    }
+
     private void OnGUI()
     {
         const float width = 300f;
@@ -297,7 +313,6 @@ public class OnlineNetworkBootstrap : MonoBehaviour
         GUI.enabled = true;
         GUI.color = oldColor;
     }
-#endif
 
     public string Status => status;
     public string RoomCode => roomCode;
