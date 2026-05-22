@@ -1119,8 +1119,8 @@ public class DuelPlayer : MonoBehaviour
     [SerializeField] private float acceleration = 28f;
     [SerializeField] private float inputSmoothTime = 0.08f;
     [SerializeField] private float rotationDegreesPerSecond = 720f;
-    [SerializeField] private float mouseTurnDegreesPerSecond = 220f;
-    [SerializeField] private float jumpForce = 7.6f;
+    [SerializeField] private float mouseTurnDegreesPerSecond = 145f;
+    [SerializeField] private float jumpForce = 8.7f;
     [SerializeField] private int maxHealth = 100;
     [SerializeField] private int attackDamage = 16;
     [SerializeField] private float attackRange = 1.65f;
@@ -1481,7 +1481,7 @@ public class DuelPlayer : MonoBehaviour
             transform.position += frameMovement;
         }
 
-        if (transform.position.y < 1f && verticalVelocity <= 0f)
+        if (characterController == null && transform.position.y < 1f && verticalVelocity <= 0f)
         {
             Vector3 groundedPosition = transform.position;
             groundedPosition.y = 1f;
@@ -1548,181 +1548,90 @@ public class DuelPlayer : MonoBehaviour
     private void BasicAttack()
     {
         int damage = attackDamage;
-        float range = attackRange;
         float knockback = 10f;
         float cooldownMultiplier = 1f;
-        float visualWidth = 0.4f;
-        float visualHeight = 0.32f;
-        float attackLunge = 2.5f;
-        float visualDuration = 0.16f;
-        float hitDot = 0.18f;
-        bool piercesWalls = false;
+        float projectileSpeed = 13f;
+        int slowSeconds = 0;
+        float stunSeconds = 0f;
+        bool poison = false;
         Color hitColor = new Color(1f, 0.85f, 0.15f);
 
         switch (ability)
         {
             case DuelAbility.DashMaster:
                 damage = 14;
-                range = 2.35f;
                 knockback = 12f;
                 cooldownMultiplier = 0.85f;
-                visualWidth = 0.45f;
-                visualHeight = 0.28f;
-                attackLunge = 5.5f;
-                visualDuration = 0.11f;
-                hitDot = 0.05f;
+                projectileSpeed = 15f;
                 hitColor = Color.yellow;
                 break;
             case DuelAbility.FireMage:
                 damage = 20;
-                range = 2.25f;
                 knockback = 8f;
                 cooldownMultiplier = 1.05f;
-                visualWidth = 0.9f;
-                visualHeight = 0.45f;
-                attackLunge = 1.8f;
-                visualDuration = 0.2f;
-                hitDot = -0.05f;
+                projectileSpeed = 12.5f;
                 hitColor = Color.red;
                 break;
             case DuelAbility.IceMage:
                 damage = 12;
-                range = 2.15f;
                 knockback = 6f;
-                visualWidth = 0.75f;
-                visualHeight = 0.35f;
-                attackLunge = 1.5f;
-                visualDuration = 0.18f;
-                hitDot = 0.05f;
+                slowSeconds = 1;
+                projectileSpeed = 12f;
                 hitColor = Color.cyan;
                 break;
             case DuelAbility.Healer:
                 damage = 13;
-                range = 1.85f;
                 knockback = 5f;
-                visualWidth = 0.55f;
-                visualHeight = 0.5f;
-                attackLunge = 1.2f;
-                visualDuration = 0.22f;
-                hitDot = 0.15f;
+                projectileSpeed = 12f;
                 hitColor = Color.green;
                 break;
             case DuelAbility.Thunder:
                 damage = 15;
-                range = 2.2f;
                 knockback = 8f;
                 cooldownMultiplier = 0.9f;
-                visualWidth = 0.7f;
-                visualHeight = 0.65f;
-                attackLunge = 3.2f;
-                visualDuration = 0.12f;
-                hitDot = -0.02f;
+                projectileSpeed = 15f;
+                stunSeconds = 0.12f;
                 hitColor = Color.yellow;
                 break;
             case DuelAbility.Wind:
                 damage = 11;
-                range = 2.55f;
                 knockback = 16f;
                 cooldownMultiplier = 0.9f;
-                visualWidth = 1f;
-                visualHeight = 0.3f;
-                attackLunge = 2.8f;
-                visualDuration = 0.22f;
-                hitDot = -0.12f;
+                projectileSpeed = 16f;
                 hitColor = Color.white;
                 break;
             case DuelAbility.Stone:
                 damage = 24;
-                range = 1.5f;
                 knockback = 18f;
                 cooldownMultiplier = 1.25f;
-                visualWidth = 1.05f;
-                visualHeight = 0.75f;
-                attackLunge = 0.8f;
-                visualDuration = 0.24f;
-                hitDot = 0.12f;
+                projectileSpeed = 9.5f;
                 hitColor = Color.gray;
                 break;
             case DuelAbility.Shadow:
                 damage = 18;
-                range = 2.05f;
                 knockback = 5f;
                 cooldownMultiplier = 0.85f;
-                visualWidth = 0.32f;
-                visualHeight = 0.25f;
-                attackLunge = 4.8f;
-                visualDuration = 0.1f;
-                hitDot = 0.25f;
-                piercesWalls = true;
+                projectileSpeed = 17f;
                 hitColor = Color.black;
                 break;
             case DuelAbility.Poison:
                 damage = 10;
-                range = 2.3f;
                 knockback = 5f;
-                visualWidth = 0.85f;
-                visualHeight = 0.38f;
-                attackLunge = 1.6f;
-                visualDuration = 0.24f;
-                hitDot = -0.02f;
+                poison = true;
+                projectileSpeed = 12.5f;
                 hitColor = Color.magenta;
                 break;
             case DuelAbility.Magnet:
                 damage = 13;
-                range = 2.15f;
                 knockback = 3f;
-                visualWidth = 1.05f;
-                visualHeight = 0.55f;
-                attackLunge = 1.4f;
-                visualDuration = 0.22f;
-                hitDot = -0.08f;
+                projectileSpeed = 13.5f;
                 hitColor = new Color(0.8f, 0.8f, 1f);
                 break;
         }
 
         nextAttackTime = Time.time + attackCooldown * cooldownMultiplier;
-        pushVelocity += transform.forward * attackLunge;
-        characterVisualAttackEndTime = Time.time + visualDuration + 0.05f;
-        ShowAttackVisual(hitColor, visualDuration, range, visualWidth, visualHeight);
-
-        if (!IsOpponentInFront(range, hitDot))
-        {
-            return;
-        }
-
-        if (!piercesWalls && IsAttackBlockedByWall())
-        {
-            return;
-        }
-
-        opponent.TakeDamage(damage);
-        opponent.AddPush(transform.forward * knockback);
-        SpawnHitEffect(opponent.transform.position + Vector3.up * 0.7f, hitColor);
-
-        switch (ability)
-        {
-            case DuelAbility.IceMage:
-                opponent.ApplySlow(1.2f);
-                break;
-            case DuelAbility.Healer:
-                Heal(5);
-                break;
-            case DuelAbility.Thunder:
-                opponent.ApplyStun(0.12f);
-                break;
-            case DuelAbility.Shadow:
-                if (Vector3.Dot(transform.forward, opponent.transform.forward) > 0.45f)
-                {
-                    opponent.TakeDamage(8);
-                }
-                break;
-            case DuelAbility.Poison:
-                opponent.ApplyPoison();
-                break;
-            case DuelAbility.Magnet:
-                opponent.AddPush((transform.position - opponent.transform.position).normalized * 5f);
-                break;
-        }
+        characterVisualAttackEndTime = Time.time + 0.18f;
+        ShootProjectile(hitColor, projectileSpeed, damage, slowSeconds, stunSeconds, poison, knockback);
     }
 
     private void UseSkillOne()
@@ -1898,17 +1807,23 @@ public class DuelPlayer : MonoBehaviour
         opponent.AddPush(direction.normalized * force);
     }
 
-    private void ShootProjectile(Color color, float speed, int damage, int slowSeconds, float stunSeconds, bool poison)
+    private void ShootProjectile(Color color, float speed, int damage, int slowSeconds, float stunSeconds, bool poison, float knockback = 0f)
     {
         GameObject projectileObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         projectileObject.name = GetAbilityName() + " Projectile";
         projectileObject.transform.position = transform.position + transform.forward * 0.9f + Vector3.up * 0.2f;
         projectileObject.transform.localScale = Vector3.one * 0.45f;
         projectileObject.GetComponent<Renderer>().material = CreateMaterial(color);
+        Collider projectileCollider = projectileObject.GetComponent<Collider>();
+        if (projectileCollider != null)
+        {
+            Destroy(projectileCollider);
+        }
+
         BuildProjectileVisual(projectileObject.transform, color);
 
         DuelProjectile projectile = projectileObject.AddComponent<DuelProjectile>();
-        projectile.Setup(this, opponent, transform.forward, speed, damage, slowSeconds, stunSeconds, poison);
+        projectile.Setup(this, opponent, transform.forward, speed, damage, slowSeconds, stunSeconds, poison, knockback);
     }
 
     private void BuildProjectileVisual(Transform projectileRoot, Color color)
@@ -2069,6 +1984,11 @@ public class DuelPlayer : MonoBehaviour
         shape.transform.localRotation = localRotation;
         shape.transform.localScale = localScale;
         shape.GetComponent<Renderer>().material = CreateMaterial(color);
+        Collider shapeCollider = shape.GetComponent<Collider>();
+        if (shapeCollider != null)
+        {
+            Destroy(shapeCollider);
+        }
     }
 
     private void SpawnEffect(Color color, float size)
@@ -2187,6 +2107,11 @@ public class DuelPlayer : MonoBehaviour
         shape.transform.localScale = localScale;
         shape.transform.localRotation = localRotation;
         shape.GetComponent<Renderer>().material = CreateMaterial(color);
+        Collider shapeCollider = shape.GetComponent<Collider>();
+        if (shapeCollider != null)
+        {
+            Destroy(shapeCollider);
+        }
     }
 
     private void SpawnHitEffect(Vector3 position, Color color)
@@ -2232,6 +2157,11 @@ public class DuelPlayer : MonoBehaviour
         shape.transform.localScale = localScale;
         shape.transform.localRotation = localRotation;
         shape.GetComponent<Renderer>().material = CreateMaterial(color);
+        Collider shapeCollider = shape.GetComponent<Collider>();
+        if (shapeCollider != null)
+        {
+            Destroy(shapeCollider);
+        }
     }
 
     private Material CreateMaterial(Color color)
@@ -2342,9 +2272,10 @@ public class DuelProjectile : MonoBehaviour
     private int slowSeconds;
     private float stunSeconds;
     private bool poison;
+    private float knockback;
     private float destroyTime;
 
-    public void Setup(DuelPlayer projectileOwner, DuelPlayer projectileTarget, Vector3 moveDirection, float projectileSpeed, int projectileDamage, int projectileSlowSeconds, float projectileStunSeconds, bool projectilePoison)
+    public void Setup(DuelPlayer projectileOwner, DuelPlayer projectileTarget, Vector3 moveDirection, float projectileSpeed, int projectileDamage, int projectileSlowSeconds, float projectileStunSeconds, bool projectilePoison, float projectileKnockback)
     {
         owner = projectileOwner;
         target = projectileTarget;
@@ -2354,32 +2285,56 @@ public class DuelProjectile : MonoBehaviour
         slowSeconds = projectileSlowSeconds;
         stunSeconds = projectileStunSeconds;
         poison = projectilePoison;
+        knockback = projectileKnockback;
         destroyTime = Time.time + 2.2f;
     }
 
     private void Update()
     {
-        transform.position += direction * speed * Time.deltaTime;
+        Vector3 startPosition = transform.position;
+        Vector3 frameMove = direction * speed * Time.deltaTime;
+        float frameDistance = frameMove.magnitude;
+
+        if (frameDistance > 0.001f)
+        {
+            RaycastHit[] hits = Physics.SphereCastAll(startPosition, 0.22f, direction, frameDistance);
+            System.Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider hitCollider = hits[i].collider;
+                if (hitCollider == null || hitCollider.isTrigger || hitCollider.transform.IsChildOf(transform))
+                {
+                    continue;
+                }
+
+                DuelPlayer hitPlayer = hitCollider.GetComponentInParent<DuelPlayer>();
+                if (hitPlayer == owner)
+                {
+                    continue;
+                }
+
+                if (hitPlayer != null)
+                {
+                    if (hitPlayer == target && hitPlayer.Health > 0)
+                    {
+                        ApplyHit(hitPlayer);
+                    }
+
+                    Destroy(gameObject);
+                    return;
+                }
+
+                transform.position = startPosition + direction * Mathf.Max(0f, hits[i].distance - 0.05f);
+                Destroy(gameObject);
+                return;
+            }
+        }
+
+        transform.position += frameMove;
 
         if (target != null && target.Health > 0 && Vector3.Distance(transform.position, target.transform.position + Vector3.up) < 0.85f)
         {
-            target.TakeDamage(damage);
-
-            if (slowSeconds > 0)
-            {
-                target.ApplySlow(slowSeconds);
-            }
-
-            if (stunSeconds > 0f)
-            {
-                target.ApplyStun(stunSeconds);
-            }
-
-            if (poison)
-            {
-                target.ApplyPoison();
-            }
-
+            ApplyHit(target);
             Destroy(gameObject);
             return;
         }
@@ -2387,6 +2342,31 @@ public class DuelProjectile : MonoBehaviour
         if (Time.time >= destroyTime)
         {
             Destroy(gameObject);
+        }
+    }
+
+    private void ApplyHit(DuelPlayer hitPlayer)
+    {
+        hitPlayer.TakeDamage(damage);
+
+        if (knockback > 0f)
+        {
+            hitPlayer.AddPush(direction * knockback);
+        }
+
+        if (slowSeconds > 0)
+        {
+            hitPlayer.ApplySlow(slowSeconds);
+        }
+
+        if (stunSeconds > 0f)
+        {
+            hitPlayer.ApplyStun(stunSeconds);
+        }
+
+        if (poison)
+        {
+            hitPlayer.ApplyPoison();
         }
     }
 }
